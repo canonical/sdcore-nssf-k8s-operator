@@ -25,3 +25,11 @@ storage:
 
 assumes:
   - k8s-api
+
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+
+requires:
+  fiveg_nrf:
+    interface: fiveg_nrf
