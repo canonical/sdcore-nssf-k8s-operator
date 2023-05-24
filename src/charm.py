@@ -11,9 +11,6 @@ from subprocess import check_output
 from charms.observability_libs.v1.kubernetes_service_patch import (  # type: ignore[import]
     KubernetesServicePatch,
 )
-from charms.prometheus_k8s.v0.prometheus_scrape import (  # type: ignore[import]
-    MetricsEndpointProvider,
-)
 from charms.sdcore_nrf.v0.fiveg_nrf import NRFRequires  # type: ignore[import]
 from jinja2 import Environment, FileSystemLoader
 from lightkube.models.core_v1 import ServicePort
@@ -40,7 +37,6 @@ class NSSFOperatorCharm(CharmBase):
         self._nssf_container_name = self._nssf_service_name = "nssf"
         self._nssf_container = self.unit.get_container(self._nssf_container_name)
         self._nrf_requires = NRFRequires(charm=self, relation_name="fiveg_nrf")
-        self._nssf_metrics_endpoint = MetricsEndpointProvider(self)
         self._service_patcher = KubernetesServicePatch(
             charm=self,
             ports=[
