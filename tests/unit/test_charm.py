@@ -17,18 +17,18 @@ from charm import NSSFOperatorCharm
 class TestCharm(unittest.TestCase):
     def setUp(self):
         self.ctx = Context(NSSFOperatorCharm)
+        self.container = Container(name="nssf", can_connect=True)
 
     def test_given_fiveg_nrf_relation_not_created_when_pebble_ready_then_status_is_blocked(
         self,
     ):
-        container = Container(name="nssf", can_connect=True)
         state_in = State(
             containers=[
-                container,
+                self.container,
             ]
         )
 
-        state_out = self.ctx.run(container.pebble_ready_event, state_in)
+        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
 
         self.assertEqual(
             state_out.status.unit,
@@ -38,14 +38,13 @@ class TestCharm(unittest.TestCase):
     def test_given_nrf_data_not_available_when_pebble_ready_then_status_is_waiting(
         self,
     ):
-        container = Container(name="nssf", can_connect=True)
         nrf_relation = Relation("fiveg_nrf")
         state_in = State(
-            containers=[container],
+            containers=[self.container],
             relations=[nrf_relation],
         )
 
-        state_out = self.ctx.run(container.pebble_ready_event, state_in)
+        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
 
         self.assertEqual(
             state_out.status.unit,
@@ -56,21 +55,20 @@ class TestCharm(unittest.TestCase):
             "nssf_pebble_ready",
         )
 
-    def test_given_relations_created_and_nrf_data_available_and_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
+    def test_given_relation_created_and_nrf_data_available_and_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
         self,
     ):
-        container = Container(name="nssf", can_connect=True)
         nrf_relation = Relation(
             endpoint="fiveg_nrf",
             remote_app_name="remote",
             remote_app_data={"url": "http://nrf:8081"},
         )
         state_in = State(
-            containers=[container],
+            containers=[self.container],
             relations=[nrf_relation],
         )
 
-        state_out = self.ctx.run(container.pebble_ready_event, state_in)
+        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
 
         self.assertEqual(
             state_out.status.unit,
@@ -87,9 +85,7 @@ class TestCharm(unittest.TestCase):
         patch_check_output,
     ):
         config_dir = tempfile.TemporaryDirectory()
-        container = Container(
-            name="nssf",
-            can_connect=True,
+        container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         nrf_relation = Relation(
@@ -102,7 +98,7 @@ class TestCharm(unittest.TestCase):
             relations=[nrf_relation],
             model=Model(name="whatever"),
         )
-        patch_check_output.return_value = "1.1.1.1".encode()
+        patch_check_output.return_value = b"1.1.1.1"
 
         self.ctx.run(container.pebble_ready_event, state_in)
 
@@ -120,9 +116,7 @@ class TestCharm(unittest.TestCase):
         patch_check_output,
     ):
         config_dir = tempfile.TemporaryDirectory()
-        container = Container(
-            name="nssf",
-            can_connect=True,
+        container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         nrf_relation = Relation(
@@ -155,9 +149,7 @@ class TestCharm(unittest.TestCase):
         patch_check_output,
     ):
         config_dir = tempfile.TemporaryDirectory()
-        container = Container(
-            name="nssf",
-            can_connect=True,
+        container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         nrf_relation = Relation(
@@ -201,9 +193,7 @@ class TestCharm(unittest.TestCase):
         patch_check_output,
     ):
         config_dir = tempfile.TemporaryDirectory()
-        container = Container(
-            name="nssf",
-            can_connect=True,
+        container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         nrf_relation = Relation(
@@ -228,7 +218,7 @@ class TestCharm(unittest.TestCase):
     def test_given_cannot_connect_to_container_when_nrf_available_then_status_is_waiting(
         self,
     ):
-        container = Container(name="nssf", can_connect=False)
+        container = self.container.replace(can_connect=False)
         nrf_relation = Relation(
             endpoint="fiveg_nrf",
             remote_app_name="remote",

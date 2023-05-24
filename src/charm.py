@@ -113,7 +113,7 @@ class NSSFOperatorCharm(CharmBase):
         self,
         content: str,
     ) -> None:
-        """Writes the NSSF config file and pushes it to the container.
+        """Pushes the NSSF config file to the container.
 
         Args:
             content (str): Content of the config file.
@@ -191,9 +191,7 @@ class NSSFOperatorCharm(CharmBase):
         Returns:
             bool: Whether the NRF data is available.
         """
-        if not self._nrf_requires.nrf_url:
-            return False
-        return True
+        return bool(self._nrf_requires.nrf_url)
 
     @property
     def _nssf_hostname(self) -> str:
