@@ -145,7 +145,6 @@ class TestCharm(unittest.TestCase):
         state_in = State(
             containers=[container],
             relations=[self.nrf_relation],
-            model=Model(name="whatever"),
         )
         patch_check_output.return_value = "1.1.1.1".encode()
 
@@ -184,7 +183,6 @@ class TestCharm(unittest.TestCase):
         state_in = State(
             containers=[container],
             relations=[self.nrf_relation],
-            model=Model(name="whatever"),
         )
         patch_check_output.return_value = "1.1.1.1".encode()
 
