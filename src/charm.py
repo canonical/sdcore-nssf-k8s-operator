@@ -2,7 +2,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charmed operator for the SDCORE NSSF service."""
+"""Charmed operator for the SD-Core NSSF service."""
 
 import logging
 from ipaddress import IPv4Address
@@ -29,7 +29,7 @@ CONFIG_TEMPLATE_NAME = "nssfcfg.conf.j2"
 
 
 class NSSFOperatorCharm(CharmBase):
-    """Main class to describe juju event handling for the 5G NSSF operator."""
+    """Main class to describe juju event handling for the SD-Core NSSF operator."""
 
     def __init__(self, *args):
         super().__init__(*args)

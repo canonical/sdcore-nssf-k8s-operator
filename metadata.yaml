@@ -1,9 +1,9 @@
 name: sdcore-nssf
 
-display-name: SD-CORE 5G NSSF
-summary: A Charmed Operator for SDCORE's Network Slice Selection Function (NSSF).
+display-name: SD-Core 5G NSSF
+summary: A Charmed Operator for SD-Core's Network Slice Selection Function (NSSF).
 description: |
-  A Charmed Operator for SDCORE's Network Slice Selection Function (NSSF).
+  A Charmed Operator for SD-Core's Network Slice Selection Function (NSSF).
 
 containers:
   nssf:

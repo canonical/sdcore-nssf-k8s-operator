@@ -1,5 +1,5 @@
-# SD-CORE NSSF Operator
-Charmed Operator for the SD-CORE Network Slice Selection Function (NSSF).
+# SD-Core NSSF Operator
+Charmed Operator for the SD-Core Network Slice Selection Function (NSSF).
 
 ## Usage
 ```bash
