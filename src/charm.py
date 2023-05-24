@@ -21,7 +21,6 @@ from ops.pebble import Layer
 
 logger = logging.getLogger(__name__)
 
-PROMETHEUS_PORT = 9089
 SBI_PORT = 29531
 CONFIG_DIR = "/free5gc/config"
 CONFIG_FILE_NAME = "nssfcfg.conf"
@@ -40,7 +39,6 @@ class NSSFOperatorCharm(CharmBase):
         self._service_patcher = KubernetesServicePatch(
             charm=self,
             ports=[
-                ServicePort(name="prometheus-exporter", port=PROMETHEUS_PORT),
                 ServicePort(name="sbi", port=SBI_PORT),
             ],
         )
