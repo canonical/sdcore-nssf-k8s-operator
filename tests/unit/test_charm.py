@@ -27,11 +27,7 @@ class TestCharm(unittest.TestCase):
     def test_given_fiveg_nrf_relation_not_created_when_pebble_ready_then_status_is_blocked(
         self,
     ):
-        state_in = State(
-            containers=[
-                self.container,
-            ]
-        )
+        state_in = State(containers=[self.container])
 
         state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
 
