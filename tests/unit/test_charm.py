@@ -18,6 +18,11 @@ class TestCharm(unittest.TestCase):
     def setUp(self):
         self.ctx = Context(NSSFOperatorCharm)
         self.container = Container(name="nssf", can_connect=True)
+        self.nrf_relation = Relation(
+            endpoint="fiveg_nrf",
+            remote_app_name="remote",
+            remote_app_data={"url": "http://nrf:8081"},
+        )
 
     def test_given_fiveg_nrf_relation_not_created_when_pebble_ready_then_status_is_blocked(
         self,
@@ -58,14 +63,9 @@ class TestCharm(unittest.TestCase):
     def test_given_relation_created_and_nrf_data_available_and_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
         self,
     ):
-        nrf_relation = Relation(
-            endpoint="fiveg_nrf",
-            remote_app_name="remote",
-            remote_app_data={"url": "http://nrf:8081"},
-        )
         state_in = State(
             containers=[self.container],
-            relations=[nrf_relation],
+            relations=[self.nrf_relation],
         )
 
         state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
@@ -88,14 +88,9 @@ class TestCharm(unittest.TestCase):
         container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
-        nrf_relation = Relation(
-            endpoint="fiveg_nrf",
-            remote_app_name="remote",
-            remote_app_data={"url": "http://nrf:8081"},
-        )
         state_in = State(
             containers=[container],
-            relations=[nrf_relation],
+            relations=[self.nrf_relation],
             model=Model(name="whatever"),
         )
         patch_check_output.return_value = b"1.1.1.1"
@@ -119,14 +114,9 @@ class TestCharm(unittest.TestCase):
         container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
-        nrf_relation = Relation(
-            endpoint="fiveg_nrf",
-            remote_app_name="remote",
-            remote_app_data={"url": "http://nrf:8081"},
-        )
         state_in = State(
             containers=[container],
-            relations=[nrf_relation],
+            relations=[self.nrf_relation],
             model=Model(name="whatever"),
         )
         patch_check_output.return_value = "1.1.1.1".encode()
@@ -152,14 +142,9 @@ class TestCharm(unittest.TestCase):
         container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
-        nrf_relation = Relation(
-            endpoint="fiveg_nrf",
-            remote_app_name="remote",
-            remote_app_data={"url": "http://nrf:8081"},
-        )
         state_in = State(
             containers=[container],
-            relations=[nrf_relation],
+            relations=[self.nrf_relation],
             model=Model(name="whatever"),
         )
         patch_check_output.return_value = "1.1.1.1".encode()
@@ -196,14 +181,9 @@ class TestCharm(unittest.TestCase):
         container = self.container.replace(
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
-        nrf_relation = Relation(
-            endpoint="fiveg_nrf",
-            remote_app_name="remote",
-            remote_app_data={"url": "http://nrf:8081"},
-        )
         state_in = State(
             containers=[container],
-            relations=[nrf_relation],
+            relations=[self.nrf_relation],
             model=Model(name="whatever"),
         )
         patch_check_output.return_value = "1.1.1.1".encode()
@@ -219,17 +199,12 @@ class TestCharm(unittest.TestCase):
         self,
     ):
         container = self.container.replace(can_connect=False)
-        nrf_relation = Relation(
-            endpoint="fiveg_nrf",
-            remote_app_name="remote",
-            remote_app_data={"url": "http://nrf:8081"},
-        )
         state_in = State(
             containers=[container],
-            relations=[nrf_relation],
+            relations=[self.nrf_relation],
         )
 
-        state_out = self.ctx.run(nrf_relation.changed_event, state_in)
+        state_out = self.ctx.run(self.nrf_relation.changed_event, state_in)
 
         self.assertEqual(
             state_out.status.unit,
