@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.pebble import Layer
 from scenario import Container, Context, Model, Mount, Relation, State  # type: ignore[import]
 
 from charm import NSSFOperatorCharm
@@ -188,6 +189,116 @@ class TestCharm(unittest.TestCase):
             state_out.status.unit,
             ActiveStatus(),
         )
+
+    @patch("ops.model.Container.restart")
+    @patch("charm.check_output")
+    def test_relations_available_and_config_pushed_and_pebble_updated_when_pebble_ready_then_service_is_restarted(  # noqa: E501
+        self,
+        patch_check_output,
+        patch_restart,
+    ):
+        config_dir = tempfile.TemporaryDirectory()
+        container = self.container.replace(
+            mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
+        )
+        state_in = State(
+            containers=[container],
+            relations=[self.nrf_relation],
+        )
+        patch_check_output.return_value = "1.1.1.1".encode()
+
+        self.ctx.run(container.pebble_ready_event, state_in)
+
+        patch_restart.assert_called_with("nssf")
+
+    @patch("ops.model.Container.restart")
+    @patch("charm.check_output")
+    def test_relations_available_and_config_pushed_and_pebble_layer_already_applied_when_pebble_ready_then_service_is_not_restarted(  # noqa: E501
+        self,
+        patch_check_output,
+        patch_restart,
+    ):
+        applied_plan = Layer(
+            {
+                "services": {
+                    "nssf": {
+                        "startup": "enabled",
+                        "override": "replace",
+                        "command": "/free5gc/nssf/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
+                        "environment": {
+                            "GOTRACEBACK": "crash",
+                            "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
+                            "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
+                            "GRPC_TRACE": "all",
+                            "GRPC_VERBOSITY": "DEBUG",
+                            "POD_IP": "1.1.1.1",
+                            "MANAGED_BY_CONFIG_POD": "true",
+                        },
+                    }
+                }
+            }
+        )
+        container = self.container.replace(
+            mounts={
+                "config_dir": Mount(
+                    "/free5gc/config/nssfcfg.conf",
+                    Path(__file__).parent / "expected_config" / "config.conf",
+                )
+            },
+            layers={"nssf": applied_plan},
+        )
+        state_in = State(
+            containers=[container],
+            relations=[self.nrf_relation],
+        )
+        patch_check_output.return_value = "1.1.1.1".encode()
+
+        self.ctx.run(container.pebble_ready_event, state_in)
+
+        patch_restart.assert_not_called()
+
+    @patch("ops.model.Container.restart")
+    @patch("charm.check_output")
+    def test_config_pushed_but_content_changed_and_layer_already_applied_when_pebble_ready_then_nssf_service_is_restarted(  # noqa: E501
+        self,
+        patch_check_output,
+        patch_restart,
+    ):
+        config_dir = tempfile.TemporaryDirectory()
+        applied_plan = Layer(
+            {
+                "services": {
+                    "nssf": {
+                        "startup": "enabled",
+                        "override": "replace",
+                        "command": "/free5gc/nssf/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
+                        "environment": {
+                            "GOTRACEBACK": "crash",
+                            "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
+                            "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
+                            "GRPC_TRACE": "all",
+                            "GRPC_VERBOSITY": "DEBUG",
+                            "POD_IP": "1.1.1.1",
+                            "MANAGED_BY_CONFIG_POD": "true",
+                        },
+                    }
+                }
+            }
+        )
+        container = self.container.replace(
+            mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
+            layers={"nssf": applied_plan},
+        )
+        state_in = State(
+            containers=[container],
+            relations=[self.nrf_relation],
+            model=Model(name="whatever"),
+        )
+        patch_check_output.return_value = "1.1.1.1".encode()
+
+        self.ctx.run(container.pebble_ready_event, state_in)
+
+        patch_restart.assert_called_with("nssf")
 
     def test_given_cannot_connect_to_container_when_nrf_available_then_status_is_waiting(
         self,

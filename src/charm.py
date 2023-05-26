@@ -17,7 +17,7 @@ from lightkube.models.core_v1 import ServicePort
 from ops.charm import CharmBase, EventBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
-from ops.pebble import Layer
+from ops.pebble import Layer, PathError
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,10 @@ CONFIG_TEMPLATE_NAME = "nssfcfg.conf.j2"
 class NSSFOperatorCharm(CharmBase):
     """Main class to describe juju event handling for the SD-Core NSSF operator."""
 
-    def __init__(self, *args):
+    def __init__(self, *args) -> None:
         super().__init__(*args)
-        self._nssf_container_name = self._nssf_service_name = "nssf"
-        self._nssf_container = self.unit.get_container(self._nssf_container_name)
+        self._container_name = self._service_name = "nssf"
+        self._container = self.unit.get_container(self._container_name)
         self._nrf_requires = NRFRequires(charm=self, relation_name="fiveg_nrf")
         self._service_patcher = KubernetesServicePatch(
             charm=self,
@@ -55,7 +55,7 @@ class NSSFOperatorCharm(CharmBase):
         Args:
             event (EventBase): Juju event
         """
-        if not self._nssf_container.can_connect():
+        if not self._container.can_connect():
             self.unit.status = WaitingStatus("Waiting for container to start")
             event.defer()
             return
@@ -66,28 +66,40 @@ class NSSFOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for NRF data to be available")
             event.defer()
             return
-        if not self._nssf_container.exists(path=CONFIG_DIR):
+        if not self._container.exists(path=CONFIG_DIR):
             self.unit.status = WaitingStatus("Waiting for storage to be attached")
             event.defer()
             return
+        config_file_changed = self._apply_nssf_config()
+        self._configure_nssf_service(force_restart=config_file_changed)
+        self.unit.status = ActiveStatus()
+
+    def _apply_nssf_config(self) -> bool:
+        """Generate and push NSSF configuration file.
+
+        Returns:
+            bool: True if the configuration file was changed.
+        """
         content = self._render_config_file(
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
             nssf_url=self._nssf_hostname,
         )
-        self._push_config_file(
-            content=content,
-        )
-        self._nssf_container.add_layer("nssf", self._nssf_pebble_layer, combine=True)
-        self.unit.status = ActiveStatus()
+        if not self._config_file_content_matches(content):
+            self._push_config_file(
+                content=content,
+            )
+            return True
+        return False
 
     def _render_config_file(
         self,
+        *,
         nssf_url: str,
         sbi_port: int,
         nrf_url: str,
     ):
-        """Renders the NSSF config file.
+        """Render the NSSF config file.
 
         Args:
             nssf_url (str): URL of the NSSF.
@@ -103,24 +115,54 @@ class NSSFOperatorCharm(CharmBase):
         )
         return content
 
+    def _config_file_content_matches(self, content: str) -> bool:
+        """Return whether the config file content matches the provided content.
+
+        Returns:
+            bool: Whether the config file content matches
+        """
+        f"{CONFIG_DIR}/{CONFIG_FILE_NAME}"
+        try:
+            existing_content = self._container.pull(path=f"{CONFIG_DIR}/{CONFIG_FILE_NAME}")
+            return existing_content.read() == content
+        except PathError:
+            return False
+
     def _push_config_file(
         self,
         content: str,
     ) -> None:
-        """Pushes the NSSF config file to the container.
+        """Push the NSSF config file to the container.
 
         Args:
             content (str): Content of the config file.
         """
-        self._nssf_container.push(
+        self._container.push(
             path=f"{CONFIG_DIR}/{CONFIG_FILE_NAME}",
             source=content,
             make_dirs=True,
         )
         logger.info("Pushed %s config file", CONFIG_FILE_NAME)
 
+    def _configure_nssf_service(self, *, force_restart: bool = False) -> None:
+        """Manage NSSF's pebble layer and service.
+
+        Updates the pebble layer if the proposed config is different from the current one. If layer
+        has been updated also restart the workload service.
+
+        Args:
+            force_restart (bool): Allows for forcibly restarting the service even if Pebble plan
+                didn't change.
+        """
+        pebble_layer = self._pebble_layer
+        plan = self._container.get_plan()
+        if plan.services != pebble_layer.services or force_restart:
+            self._container.add_layer(self._container_name, pebble_layer, combine=True)
+            self._container.restart(self._service_name)
+            logger.info("Restarted container %s", self._service_name)
+
     def _relation_created(self, relation_name: str) -> bool:
-        """Returns True if the relation is created, False otherwise.
+        """Return True if the relation is created, False otherwise.
 
         Args:
             relation_name (str): Name of the relation.
@@ -131,8 +173,8 @@ class NSSFOperatorCharm(CharmBase):
         return bool(self.model.get_relation(relation_name))
 
     @property
-    def _nssf_pebble_layer(self) -> Layer:
-        """Returns pebble layer for the nssf container.
+    def _pebble_layer(self) -> Layer:
+        """Return pebble layer for the nssf container.
 
         Returns:
             Layer: Pebble Layer
@@ -140,7 +182,7 @@ class NSSFOperatorCharm(CharmBase):
         return Layer(
             {
                 "services": {
-                    self._nssf_service_name: {
+                    self._service_name: {
                         "override": "replace",
                         "startup": "enabled",
                         "command": f"/free5gc/nssf/nssf --nssfcfg {CONFIG_DIR}/{CONFIG_FILE_NAME}",  # noqa: E501
@@ -152,7 +194,7 @@ class NSSFOperatorCharm(CharmBase):
 
     @property
     def _nssf_environment_variables(self) -> dict:
-        """Returns environment variables for the nssf container.
+        """Return environment variables for the nssf container.
 
         Returns:
             dict: Environment variables.
@@ -171,7 +213,7 @@ class NSSFOperatorCharm(CharmBase):
     def _pod_ip(
         self,
     ) -> str:
-        """Returns the pod IP using juju client.
+        """Return the pod IP using juju client.
 
         Returns:
             str: The pod IP.
@@ -180,7 +222,7 @@ class NSSFOperatorCharm(CharmBase):
 
     @property
     def _nrf_data_is_available(self) -> bool:
-        """Returns whether the NRF data is available.
+        """Return whether the NRF data is available.
 
         Returns:
             bool: Whether the NRF data is available.
@@ -189,7 +231,7 @@ class NSSFOperatorCharm(CharmBase):
 
     @property
     def _nssf_hostname(self) -> str:
-        """Builds and returns the NSSF hostname in the cluster.
+        """Build and return the NSSF hostname in the cluster.
 
         Returns:
             str: The NSSF hostname.
