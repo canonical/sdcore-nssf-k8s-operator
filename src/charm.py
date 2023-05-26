@@ -43,10 +43,10 @@ class NSSFOperatorCharm(CharmBase):
             ],
         )
 
-        self.framework.observe(self.on.nssf_pebble_ready, self._on_nssf_pebble_ready)
-        self.framework.observe(self._nrf_requires.on.nrf_available, self._on_nssf_pebble_ready)
+        self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
+        self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
 
-    def _on_nssf_pebble_ready(
+    def _configure_nssf(
         self,
         event: EventBase,
     ) -> None:
