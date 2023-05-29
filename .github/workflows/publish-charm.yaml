@@ -21,7 +21,7 @@ jobs:
       - name: Move charm in current directory
         run: find ./ -name sdcore-nssf_ubuntu-22.04-amd64.charm -exec mv -t ./ {} \;
       - name: Select Charmhub channel
-        uses: canonical/charming-actions/channel@2.2.5
+        uses: canonical/charming-actions/channel@2.3.0
         id: channel
       - name: Upload charm to Charmhub
         env:
