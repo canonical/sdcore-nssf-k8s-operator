@@ -26,7 +26,7 @@ jobs:
       - name: Upload charm to Charmhub
         uses: canonical/charming-actions/upload-charm@2.3.0
         with:
-          built-charm-path: "sdcore-ausf_ubuntu-22.04-amd64.charm"
+          built-charm-path: "sdcore-nssf_ubuntu-22.04-amd64.charm"
           credentials: "${{ secrets.CHARMCRAFT_AUTH }}"
           github-token: "${{ secrets.GITHUB_TOKEN }}"
           channel: "${{ steps.channel.outputs.name }}"
