@@ -50,7 +50,7 @@ class NSSFOperatorCharm(CharmBase):
         self,
         event: EventBase,
     ) -> None:
-        """Handle pebble ready event for NSSF container.
+        """Configure NSSF configuration file and pebble service.
 
         Args:
             event (EventBase): Juju event
