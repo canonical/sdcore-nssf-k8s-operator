@@ -2,14 +2,14 @@ configuration:
   nrfUri: {{ nrf_url }}
   nsiList:
   - nsiInformationList:
-	- nrfId: {{ nrf_url }}/nnrf-nfm/v1/nf-instances
-	  nsiId: 22
+    - nrfId: {{ nrf_url }}/nnrf-nfm/v1/nf-instances
+      nsiId: 22
   nssfName: NSSF
   sbi:
-	bindingIPv4: 0.0.0.0
-	port: {{ sbi_port }}
-	registerIPv4: {{ nssf_url }}
-	scheme: http
+    bindingIPv4: 0.0.0.0
+    port: {{ sbi_port }}
+    registerIPv4: {{ nssf_url }}
+    scheme: http
   serviceNameList:
   - nnssf-nsselection
   - nnssf-nssaiavailability

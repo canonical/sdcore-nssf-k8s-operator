@@ -29,6 +29,7 @@ async def _deploy_mongodb(ops_test):
 
 
 async def _deploy_sdcore_nrf_operator(ops_test):
+    await _deploy_mongodb(ops_test)
     await ops_test.model.deploy(
         NRF_APPLICATION_NAME,
         application_name=NRF_APPLICATION_NAME,
@@ -44,10 +45,8 @@ async def _deploy_sdcore_nrf_operator(ops_test):
 @pytest.mark.abort_on_fail
 async def build_and_deploy(ops_test):
     """Build the charm-under-test and deploy it."""
-    deploy_mongo = asyncio.create_task(_deploy_mongodb(ops_test))
     deploy_nrf = asyncio.create_task(_deploy_sdcore_nrf_operator(ops_test))
     charm = await ops_test.build_charm(".")
-    await deploy_mongo
     await deploy_nrf
     resources = {
         "nssf-image": METADATA["resources"]["nssf-image"]["upstream-source"],
