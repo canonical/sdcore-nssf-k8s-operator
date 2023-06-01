@@ -83,7 +83,7 @@ class NSSFOperatorCharm(CharmBase):
         content = self._render_config_file(
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
-            nssf_url=self._nssf_hostname,
+            nssf_ip=self._pod_ip,
         )
         if not self._config_file_content_matches(content):
             self._push_config_file(
@@ -95,14 +95,14 @@ class NSSFOperatorCharm(CharmBase):
     def _render_config_file(
         self,
         *,
-        nssf_url: str,
+        nssf_ip: str,
         sbi_port: int,
         nrf_url: str,
     ):
         """Render the NSSF config file.
 
         Args:
-            nssf_url (str): URL of the NSSF.
+            nssf_ip (str): IP address of the NSSF.
             sbi_port (int): NSSF SBi port.
             nrf_url (str): URL of the NRF.
         """
@@ -111,7 +111,7 @@ class NSSFOperatorCharm(CharmBase):
         content = template.render(
             sbi_port=sbi_port,
             nrf_url=nrf_url,
-            nssf_url=nssf_url,
+            nssf_ip=nssf_ip,
         )
         return content
 
