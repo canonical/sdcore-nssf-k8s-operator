@@ -7,6 +7,7 @@
 import logging
 from ipaddress import IPv4Address
 from subprocess import check_output
+from typing import Optional
 
 from charms.observability_libs.v1.kubernetes_service_patch import (  # type: ignore[import]
     KubernetesServicePatch,
@@ -43,6 +44,7 @@ class NSSFOperatorCharm(CharmBase):
             ],
         )
 
+        self.framework.observe(self.on.config_changed, self._configure_nssf)
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
 
@@ -59,6 +61,11 @@ class NSSFOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for container to start")
             event.defer()
             return
+        if invalid_configs := self._get_invalid_configs():
+            self.unit.status = BlockedStatus(
+                f"The following configurations are not valid: {invalid_configs}"
+            )
+            return
         if not self._relation_created("fiveg_nrf"):
             self.unit.status = BlockedStatus("Waiting for fiveg_nrf relation")
             return
@@ -73,6 +80,19 @@ class NSSFOperatorCharm(CharmBase):
         config_file_changed = self._apply_nssf_config()
         self._configure_nssf_service(force_restart=config_file_changed)
         self.unit.status = ActiveStatus()
+
+    def _get_invalid_configs(self) -> list[str]:
+        """Returns list of invalid configurations.
+
+        Returns:
+            list: List of strings matching config keys.
+        """
+        invalid_configs = []
+        if not self._get_sd_config():
+            invalid_configs.append("sd")
+        if not self._get_sst_config():
+            invalid_configs.append("sst")
+        return invalid_configs
 
     def _apply_nssf_config(self) -> bool:
         """Generate and push NSSF configuration file.
@@ -208,6 +228,12 @@ class NSSFOperatorCharm(CharmBase):
             "POD_IP": self._pod_ip,
             "MANAGED_BY_CONFIG_POD": "true",
         }
+
+    def _get_sd_config(self) -> Optional[str]:
+        return self.model.config.get("sd")
+
+    def _get_sst_config(self) -> Optional[str]:
+        return self.model.config.get("sst")
 
     @property
     def _pod_ip(

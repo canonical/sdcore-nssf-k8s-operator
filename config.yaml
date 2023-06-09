@@ -1,0 +1,9 @@
+options:
+  sd:
+    type: string
+    default: 010203
+    description: Slice ID
+  sst:
+    type: int
+    default: 1
+    description: Slice Selection Type
