@@ -255,15 +255,6 @@ class NSSFOperatorCharm(CharmBase):
         """
         return bool(self._nrf_requires.nrf_url)
 
-    @property
-    def _nssf_hostname(self) -> str:
-        """Build and return the NSSF hostname in the cluster.
-
-        Returns:
-            str: The NSSF hostname.
-        """
-        return f"{self.model.app.name}.{self.model.name}.svc.cluster.local"
-
 
 if __name__ == "__main__":  # pragma: no cover
     main(NSSFOperatorCharm)

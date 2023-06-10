@@ -1,7 +1,7 @@
 options:
   sd:
     type: string
-    default: 010203
+    default: "010203"
     description: Slice ID
   sst:
     type: int
