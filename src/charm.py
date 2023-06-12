@@ -104,6 +104,8 @@ class NSSFOperatorCharm(CharmBase):
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
             nssf_ip=self._pod_ip,
+            sst=self._get_sst_config(),
+            sd=self._get_sd_config(),
         )
         if not self._config_file_content_matches(content):
             self._push_config_file(
@@ -118,6 +120,8 @@ class NSSFOperatorCharm(CharmBase):
         nssf_ip: str,
         sbi_port: int,
         nrf_url: str,
+        sst: int,
+        sd: str,
     ):
         """Render the NSSF config file.
 
@@ -125,6 +129,8 @@ class NSSFOperatorCharm(CharmBase):
             nssf_ip (str): IP address of the NSSF.
             sbi_port (int): NSSF SBi port.
             nrf_url (str): URL of the NRF.
+            sst (int): Slice Selection Type
+            sd (str): Slice ID
         """
         jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR))
         template = jinja2_environment.get_template(CONFIG_TEMPLATE_NAME)
@@ -132,6 +138,8 @@ class NSSFOperatorCharm(CharmBase):
             sbi_port=sbi_port,
             nrf_url=nrf_url,
             nssf_ip=nssf_ip,
+            sst=sst,
+            sd=sd,
         )
         return content
 
@@ -232,8 +240,8 @@ class NSSFOperatorCharm(CharmBase):
     def _get_sd_config(self) -> Optional[str]:
         return self.model.config.get("sd")
 
-    def _get_sst_config(self) -> Optional[str]:
-        return self.model.config.get("sst")
+    def _get_sst_config(self) -> Optional[int]:
+        return int(self.model.config.get("sst"))
 
     @property
     def _pod_ip(
