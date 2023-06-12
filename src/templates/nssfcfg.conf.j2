@@ -4,6 +4,9 @@ configuration:
   - nsiInformationList:
     - nrfId: {{ nrf_url }}/nnrf-nfm/v1/nf-instances
       nsiId: 22
+    snssai:
+      sd: "{{ sd }}"
+      sst: {{ sst }}
   nssfName: NSSF
   sbi:
     bindingIPv4: 0.0.0.0

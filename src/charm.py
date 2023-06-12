@@ -7,6 +7,7 @@
 import logging
 from ipaddress import IPv4Address
 from subprocess import check_output
+from typing import Optional
 
 from charms.observability_libs.v1.kubernetes_service_patch import (  # type: ignore[import]
     KubernetesServicePatch,
@@ -43,6 +44,7 @@ class NSSFOperatorCharm(CharmBase):
             ],
         )
 
+        self.framework.observe(self.on.config_changed, self._configure_nssf)
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
 
@@ -59,6 +61,11 @@ class NSSFOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for container to start")
             event.defer()
             return
+        if invalid_configs := self._get_invalid_configs():
+            self.unit.status = BlockedStatus(
+                f"The following configurations are not valid: {invalid_configs}"
+            )
+            return
         if not self._relation_created("fiveg_nrf"):
             self.unit.status = BlockedStatus("Waiting for fiveg_nrf relation")
             return
@@ -74,6 +81,19 @@ class NSSFOperatorCharm(CharmBase):
         self._configure_nssf_service(force_restart=config_file_changed)
         self.unit.status = ActiveStatus()
 
+    def _get_invalid_configs(self) -> list[str]:
+        """Returns list of invalid configurations.
+
+        Returns:
+            list: List of strings matching config keys.
+        """
+        invalid_configs = []
+        if not self._get_sd_config():
+            invalid_configs.append("sd")
+        if not self._get_sst_config():
+            invalid_configs.append("sst")
+        return invalid_configs
+
     def _apply_nssf_config(self) -> bool:
         """Generate and push NSSF configuration file.
 
@@ -84,6 +104,8 @@ class NSSFOperatorCharm(CharmBase):
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
             nssf_ip=self._pod_ip,
+            sst=self._get_sst_config(),  # type: ignore[arg-type]
+            sd=self._get_sd_config(),  # type: ignore[arg-type]
         )
         if not self._config_file_content_matches(content):
             self._push_config_file(
@@ -98,6 +120,8 @@ class NSSFOperatorCharm(CharmBase):
         nssf_ip: str,
         sbi_port: int,
         nrf_url: str,
+        sst: int,
+        sd: str,
     ):
         """Render the NSSF config file.
 
@@ -105,6 +129,8 @@ class NSSFOperatorCharm(CharmBase):
             nssf_ip (str): IP address of the NSSF.
             sbi_port (int): NSSF SBi port.
             nrf_url (str): URL of the NRF.
+            sst (int): Slice Selection Type
+            sd (str): Slice ID
         """
         jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR))
         template = jinja2_environment.get_template(CONFIG_TEMPLATE_NAME)
@@ -112,6 +138,8 @@ class NSSFOperatorCharm(CharmBase):
             sbi_port=sbi_port,
             nrf_url=nrf_url,
             nssf_ip=nssf_ip,
+            sst=sst,
+            sd=sd,
         )
         return content
 
@@ -209,6 +237,12 @@ class NSSFOperatorCharm(CharmBase):
             "MANAGED_BY_CONFIG_POD": "true",
         }
 
+    def _get_sd_config(self) -> Optional[str]:
+        return self.model.config.get("sd")
+
+    def _get_sst_config(self) -> Optional[int]:
+        return int(self.model.config.get("sst"))  # type: ignore[arg-type]
+
     @property
     def _pod_ip(
         self,
@@ -228,15 +262,6 @@ class NSSFOperatorCharm(CharmBase):
             bool: Whether the NRF data is available.
         """
         return bool(self._nrf_requires.nrf_url)
-
-    @property
-    def _nssf_hostname(self) -> str:
-        """Build and return the NSSF hostname in the cluster.
-
-        Returns:
-            str: The NSSF hostname.
-        """
-        return f"{self.model.app.name}.{self.model.name}.svc.cluster.local"
 
 
 if __name__ == "__main__":  # pragma: no cover
