@@ -104,8 +104,8 @@ class NSSFOperatorCharm(CharmBase):
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
             nssf_ip=self._pod_ip,
-            sst=self._get_sst_config(),
-            sd=self._get_sd_config(),
+            sst=self._get_sst_config(),  # type: ignore[arg-type]
+            sd=self._get_sd_config(),  # type: ignore[arg-type]
         )
         if not self._config_file_content_matches(content):
             self._push_config_file(
@@ -241,7 +241,7 @@ class NSSFOperatorCharm(CharmBase):
         return self.model.config.get("sd")
 
     def _get_sst_config(self) -> Optional[int]:
-        return int(self.model.config.get("sst"))
+        return int(self.model.config.get("sst"))  # type: ignore[arg-type]
 
     @property
     def _pod_ip(
