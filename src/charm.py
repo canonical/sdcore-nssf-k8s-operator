@@ -46,6 +46,7 @@ class NSSFOperatorCharm(CharmBase):
 
         self.framework.observe(self.on.config_changed, self._configure_nssf)
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
+        self.framework.observe(self.on.fiveg_nrf_relation_joined, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
 
     def _configure_nssf(
@@ -77,6 +78,10 @@ class NSSFOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for storage to be attached")
             event.defer()
             return
+        if not _get_pod_ip():
+            self.unit.status = WaitingStatus("Waiting for pod IP address to be available")
+            event.defer()
+            return
         config_file_changed = self._apply_nssf_config()
         self._configure_nssf_service(force_restart=config_file_changed)
         self.unit.status = ActiveStatus()
@@ -103,7 +108,7 @@ class NSSFOperatorCharm(CharmBase):
         content = self._render_config_file(
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
-            nssf_ip=self._pod_ip,
+            nssf_ip=_get_pod_ip(),  # type: ignore[arg-type]
             sst=self._get_sst_config(),  # type: ignore[arg-type]
             sd=self._get_sd_config(),  # type: ignore[arg-type]
         )
@@ -233,7 +238,7 @@ class NSSFOperatorCharm(CharmBase):
             "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
             "GRPC_TRACE": "all",
             "GRPC_VERBOSITY": "DEBUG",
-            "POD_IP": self._pod_ip,
+            "POD_IP": _get_pod_ip(),
             "MANAGED_BY_CONFIG_POD": "true",
         }
 
@@ -244,17 +249,6 @@ class NSSFOperatorCharm(CharmBase):
         return int(self.model.config.get("sst"))  # type: ignore[arg-type]
 
     @property
-    def _pod_ip(
-        self,
-    ) -> str:
-        """Return the pod IP using juju client.
-
-        Returns:
-            str: The pod IP.
-        """
-        return str(IPv4Address(check_output(["unit-get", "private-address"]).decode().strip()))
-
-    @property
     def _nrf_data_is_available(self) -> bool:
         """Return whether the NRF data is available.
 
@@ -262,6 +256,16 @@ class NSSFOperatorCharm(CharmBase):
             bool: Whether the NRF data is available.
         """
         return bool(self._nrf_requires.nrf_url)
+
+
+def _get_pod_ip() -> Optional[str]:
+    """Returns the pod IP using juju client.
+
+    Returns:
+        str: The pod IP.
+    """
+    ip_address = check_output(["unit-get", "private-address"])
+    return str(IPv4Address(ip_address.decode().strip())) if ip_address else None
 
 
 if __name__ == "__main__":  # pragma: no cover
