@@ -152,7 +152,7 @@ class TestCharm(unittest.TestCase):
                 "nssf": {
                     "startup": "enabled",
                     "override": "replace",
-                    "command": "/free5gc/nssf/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
+                    "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
                     "environment": {
                         "GOTRACEBACK": "crash",
                         "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
@@ -246,7 +246,7 @@ class TestCharm(unittest.TestCase):
                     "nssf": {
                         "startup": "enabled",
                         "override": "replace",
-                        "command": "/free5gc/nssf/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
+                        "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
                         "environment": {
                             "GOTRACEBACK": "crash",
                             "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
@@ -293,7 +293,7 @@ class TestCharm(unittest.TestCase):
                     "nssf": {
                         "startup": "enabled",
                         "override": "replace",
-                        "command": "/free5gc/nssf/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
+                        "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
                         "environment": {
                             "GOTRACEBACK": "crash",
                             "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",

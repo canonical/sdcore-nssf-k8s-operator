@@ -25,4 +25,4 @@ juju integrate sdcore-nrf sdcore-nssf
 
 ## Image
 
-- **nssf**: `omecproject/5gc-nssf:master-4e5aef3`
+- **nssf**: `ghcr.io/canonical/sdcore-nssf:1.3`
