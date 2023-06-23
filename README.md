@@ -23,6 +23,13 @@ juju integrate mongodb-k8s sdcore-nrf
 juju integrate sdcore-nrf sdcore-nssf
 ```
 
+## Optional
+
+```bash
+juju deploy self-signed-certificates --channel=edge
+juju integrate sdcore-nssf:certificates self-signed-certificates:certificates
+```
+
 ## Image
 
 - **nssf**: `ghcr.io/canonical/sdcore-nssf:1.3`

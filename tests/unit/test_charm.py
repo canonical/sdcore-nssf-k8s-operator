@@ -2,11 +2,13 @@
 # See LICENSE file for licensing details.
 
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Layer
 from scenario import Container, Context, Model, Mount, Relation, State  # type: ignore[import]
@@ -24,11 +26,15 @@ class TestCharm(unittest.TestCase):
             remote_app_name="remote",
             remote_app_data={"url": "http://nrf:8081"},
         )
+        self.tls_relation = Relation(
+            endpoint="certificates",
+            remote_app_name="tls-provider",
+        )
 
     def test_given_fiveg_nrf_relation_not_created_when_pebble_ready_then_status_is_blocked(
         self,
     ):
-        state_in = State(containers=[self.container])
+        state_in = State(containers=[self.container], leader=True)
 
         state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
 
@@ -42,6 +48,7 @@ class TestCharm(unittest.TestCase):
     ):
         nrf_relation = Relation("fiveg_nrf")
         state_in = State(
+            leader=True,
             containers=[self.container],
             relations=[nrf_relation],
         )
@@ -61,6 +68,7 @@ class TestCharm(unittest.TestCase):
         self,
     ):
         state_in = State(
+            leader=True,
             containers=[self.container],
             relations=[self.nrf_relation],
         )
@@ -86,6 +94,7 @@ class TestCharm(unittest.TestCase):
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
             model=Model(name="whatever"),
@@ -112,6 +121,7 @@ class TestCharm(unittest.TestCase):
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
             model=Model(name="whatever"),
@@ -140,6 +150,7 @@ class TestCharm(unittest.TestCase):
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
         )
@@ -178,6 +189,7 @@ class TestCharm(unittest.TestCase):
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
         )
@@ -200,6 +212,7 @@ class TestCharm(unittest.TestCase):
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
         )
@@ -224,6 +237,7 @@ class TestCharm(unittest.TestCase):
             mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
         )
@@ -270,6 +284,7 @@ class TestCharm(unittest.TestCase):
             layers={"nssf": applied_plan},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
         )
@@ -312,6 +327,7 @@ class TestCharm(unittest.TestCase):
             layers={"nssf": applied_plan},
         )
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
             model=Model(name="whatever"),
@@ -327,6 +343,7 @@ class TestCharm(unittest.TestCase):
     ):
         container = self.container.replace(can_connect=False)
         state_in = State(
+            leader=True,
             containers=[container],
             relations=[self.nrf_relation],
         )
@@ -341,3 +358,191 @@ class TestCharm(unittest.TestCase):
             state_out.deferred[0].name,
             "nrf_available",
         )
+
+    @patch("charm.generate_private_key")
+    def test_given_can_connect_when_on_certificates_relation_created_then_private_key_is_generated(
+        self, patch_generate_private_key
+    ):
+        cert_dir = tempfile.TemporaryDirectory()
+        container = self.container.replace(
+            mounts={"cert_dir": Mount("/free5gc/support/TLS", cert_dir.name)},
+        )
+        private_key = b"private key content"
+        patch_generate_private_key.return_value = private_key
+        state_in = State(
+            leader=True,
+            containers=[container],
+            relations=[self.nrf_relation, self.tls_relation],
+        )
+
+        self.ctx.run(self.tls_relation.created_event, state_in)
+
+        with open(Path(cert_dir.name) / "nssf.key") as nssf_key_file:
+            actual_content = nssf_key_file.read()
+            self.assertEqual(actual_content, private_key.decode())
+
+    @patch("charm.check_output")
+    @patch("ops.model.Container.remove_path")
+    @patch("ops.model.Container.exists")
+    def test_given_certificates_are_stored_when_on_certificates_relation_broken_then_certificates_are_removed(  # noqa: E501
+        self, patch_exists, patch_remove_path, patch_check_output
+    ):
+        patch_check_output.return_value = "1.1.1.1".encode()
+        patch_exists.return_value = True
+        state_in = State(
+            leader=True,
+            containers=[self.container],
+            relations=[self.nrf_relation, self.tls_relation],
+        )
+
+        self.ctx.run(self.tls_relation.broken_event, state_in)
+
+        patch_remove_path.assert_any_call(path="/free5gc/support/TLS/nssf.pem")
+        patch_remove_path.assert_any_call(path="/free5gc/support/TLS/nssf.key")
+        patch_remove_path.assert_any_call(path="/free5gc/support/TLS/nssf.csr")
+
+    @patch(
+        "charms.tls_certificates_interface.v2.tls_certificates.TLSCertificatesRequiresV2.request_certificate_creation",  # noqa: E501
+        new=Mock,
+    )
+    @patch("charm.generate_csr")
+    def test_given_private_key_exists_when_on_certificates_relation_joined_then_csr_is_generated(
+        self, patch_generate_csr
+    ):
+        cert_dir = tempfile.TemporaryDirectory()
+        container = self.container.replace(
+            mounts={"cert_dir": Mount("/free5gc/support/TLS", cert_dir.name)},
+        )
+        with open(Path(cert_dir.name) / "nssf.key", "w") as nssf_key_file:
+            nssf_key_file.write("never gonna let you down")
+        csr = b"whatever csr content"
+        patch_generate_csr.return_value = csr
+
+        state_in = State(
+            leader=True,
+            containers=[container],
+            relations=[self.nrf_relation, self.tls_relation],
+        )
+        self.ctx.run(self.tls_relation.joined_event, state_in)
+
+        with open(Path(cert_dir.name) / "nssf.csr") as nssf_csr_file:
+            actual_content = nssf_csr_file.read()
+            self.assertEqual(actual_content, csr.decode())
+
+    @patch(
+        "charms.tls_certificates_interface.v2.tls_certificates.TLSCertificatesRequiresV2.request_certificate_creation",  # noqa: E501
+    )
+    @patch("charm.generate_csr")
+    def test_given_private_key_exists_when_on_certificates_relation_joined_then_cert_is_requested(
+        self,
+        patch_generate_csr,
+        patch_request_certificate_creation,
+    ):
+        cert_dir = tempfile.TemporaryDirectory()
+        container = self.container.replace(
+            mounts={"cert_dir": Mount("/free5gc/support/TLS", cert_dir.name)},
+        )
+        with open(Path(cert_dir.name) / "nssf.key", "w") as nssf_key_file:
+            nssf_key_file.write("never gonna run around and desert you")
+        csr = b"whatever csr content"
+        patch_generate_csr.return_value = csr
+        state_in = State(
+            leader=True,
+            containers=[container],
+            relations=[self.nrf_relation, self.tls_relation],
+        )
+
+        self.ctx.run(self.tls_relation.joined_event, state_in)
+
+        patch_request_certificate_creation.assert_called_with(certificate_signing_request=csr)
+
+    @patch("charm.check_output")
+    def test_given_csr_matches_stored_one_when_certificate_available_then_certificate_is_pushed(
+        self,
+        patch_check_output,
+    ):
+        csr = "never gonna make you cry"
+        cert_dir = tempfile.TemporaryDirectory()
+        container = self.container.replace(
+            mounts={"cert_dir": Mount("/free5gc/support/TLS", cert_dir.name)},
+        )
+        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
+            nssf_csr_file.write(csr)
+        patch_check_output.return_value = b"1.2.3.4"
+
+        certificate = "Whatever certificate content"
+        tls_relation = Relation(
+            endpoint="certificates",
+            remote_app_name="tls-provider",
+            local_unit_data={
+                "certificate_signing_requests": json.dumps([{"certificate_signing_request": csr}])
+            },
+            remote_app_data={
+                "certificates": json.dumps(
+                    [
+                        {
+                            "certificate": certificate,
+                            "certificate_signing_request": csr,
+                            "ca": "abc",
+                            "chain": ["abc", "def"],
+                        }
+                    ]
+                )
+            },
+        )
+        state_in = State(
+            leader=True,
+            containers=[container],
+            relations=[self.nrf_relation, tls_relation],
+        )
+
+        self.ctx.run(tls_relation.changed_event, state_in)
+
+        with open(Path(cert_dir.name) / "nssf.pem") as nssf_pem_file:
+            actual_content = nssf_pem_file.read()
+            self.assertEqual(actual_content, certificate)
+
+    def test_given_csr_doesnt_match_stored_one_when_certificate_available_then_certificate_is_not_pushed(  # noqa: E501
+        self,
+    ):
+        stored_csr = "never gonna say goodbye"
+        cert_dir = tempfile.TemporaryDirectory()
+        container = self.container.replace(
+            mounts={"cert_dir": Mount("/free5gc/support/TLS", cert_dir.name)},
+        )
+        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
+            nssf_csr_file.write(stored_csr)
+
+        relation_csr = "CSR in relation data (different from stored)"
+        certificate = "Whatever certificate content"
+        tls_relation = Relation(
+            endpoint="certificates",
+            remote_app_name="tls-provider",
+            local_unit_data={
+                "certificate_signing_requests": json.dumps(
+                    [{"certificate_signing_request": relation_csr}]
+                )
+            },
+            remote_app_data={
+                "certificates": json.dumps(
+                    [
+                        {
+                            "certificate": certificate,
+                            "certificate_signing_request": relation_csr,
+                            "ca": "abc",
+                            "chain": ["abc", "def"],
+                        }
+                    ]
+                )
+            },
+        )
+        state_in = State(
+            leader=True,
+            containers=[container],
+            relations=[self.nrf_relation, tls_relation],
+        )
+
+        self.ctx.run(tls_relation.changed_event, state_in)
+
+        with pytest.raises(FileNotFoundError):
+            open(Path(cert_dir.name) / "nssf.pem")
