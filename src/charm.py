@@ -63,6 +63,7 @@ class NSSFOperatorCharm(CharmBase):
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
         self.framework.observe(self.on.fiveg_nrf_relation_joined, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
+        self.framework.observe(self._nrf_requires.on.nrf_broken, self._on_nrf_broken)
         self.framework.observe(
             self.on.certificates_relation_created, self._on_certificates_relation_created
         )
@@ -115,6 +116,14 @@ class NSSFOperatorCharm(CharmBase):
         config_file_changed = self._apply_nssf_config()
         self._configure_nssf_service(force_restart=config_file_changed)
         self.unit.status = ActiveStatus()
+
+    def _on_nrf_broken(self, event: EventBase) -> None:
+        """Event handler for NRF relation broken.
+
+        Args:
+            event (NRFBrokenEvent): Juju event
+        """
+        self.unit.status = BlockedStatus("Waiting for fiveg_nrf relation")
 
     def _on_certificates_relation_created(self, event: EventBase) -> None:
         """Generates Private key."""
