@@ -4,6 +4,9 @@ display-name: SD-Core 5G NSSF
 summary: A Charmed Operator for SD-Core's Network Slice Selection Function (NSSF).
 description: |
   A Charmed Operator for SD-Core's Network Slice Selection Function (NSSF).
+website: https://charmhub.io/sdcore-nssf
+source: https://github.com/canonical/sdcore-nssf-operator
+issues: https://github.com/canonical/sdcore-nssf-operator/issues
 
 containers:
   nssf:
