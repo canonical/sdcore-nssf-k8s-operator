@@ -4,13 +4,13 @@
 
 
 import asyncio
-from collections import Counter
 import logging
+from collections import Counter
 from pathlib import Path
-from juju.application import Application
 
 import pytest
 import yaml
+from juju.application import Application
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
