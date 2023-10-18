@@ -4,8 +4,10 @@
 
 
 import asyncio
+from collections import Counter
 import logging
 from pathlib import Path
+from juju.application import Application
 
 import pytest
 import yaml
@@ -125,3 +127,21 @@ async def test_restore_tls_and_wait_for_active_status(ops_test, build_and_deploy
         relation1=APP_NAME, relation2=TLS_PROVIDER_NAME
     )
     await ops_test.model.wait_for_idle(apps=[APP_NAME], status="active", timeout=1000)  # type: ignore[union-attr]  # noqa: E501
+
+
+@pytest.mark.abort_on_fail
+async def test_when_scale_app_beyond_1_then_only_one_unit_is_active(
+    ops_test: OpsTest, build_and_deploy
+):
+    assert ops_test.model
+    assert isinstance(app := ops_test.model.applications[APP_NAME], Application)
+    await app.scale(3)
+    await ops_test.model.wait_for_idle(apps=[APP_NAME], timeout=1000, wait_for_at_least_units=3)
+    unit_statuses = Counter(unit.workload_status for unit in app.units)
+    assert unit_statuses.get("active") == 1
+    assert unit_statuses.get("blocked") == 2
+
+
+async def test_remove_app(ops_test: OpsTest, build_and_deploy):
+    assert ops_test.model
+    await ops_test.model.remove_application(APP_NAME, block_until_done=True)
