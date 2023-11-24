@@ -22,9 +22,9 @@ from charms.tls_certificates_interface.v2.tls_certificates import (  # type: ign
 )
 from jinja2 import Environment, FileSystemLoader
 from lightkube.models.core_v1 import ServicePort
-from ops.charm import CharmBase, EventBase
+from ops.charm import CharmBase, CollectStatusEvent, EventBase, RelationBrokenEvent
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, StatusBase, WaitingStatus
 from ops.pebble import Layer, PathError
 
 logger = logging.getLogger(__name__)
@@ -46,14 +46,6 @@ class NSSFOperatorCharm(CharmBase):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
-        if not self.unit.is_leader():
-            # NOTE: In cases where leader status is lost before the charm is
-            # finished processing all teardown events, this prevents teardown
-            # event code from running. Luckily, for this charm, none of the
-            # teardown code is necessary to preform if we're removing the
-            # charm.
-            self.unit.status = BlockedStatus("Scaling is not implemented for this charm")
-            return
         self._container_name = self._service_name = "nssf"
         self._container = self.unit.get_container(self._container_name)
         self._nrf_requires = NRFRequires(charm=self, relation_name="fiveg_nrf")
@@ -64,7 +56,11 @@ class NSSFOperatorCharm(CharmBase):
             ],
         )
         self._certificates = TLSCertificatesRequiresV2(self, "certificates")
-
+        # Setting attributes to detect broken relations until
+        # https://github.com/canonical/operator/issues/940 is fixed
+        self._nrf_relation_breaking = False
+        self._tls_relation_breaking = False
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_unit_status)
         self.framework.observe(self.on.config_changed, self._configure_nssf)
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
         self.framework.observe(self.on.fiveg_nrf_relation_joined, self._configure_nssf)
@@ -86,6 +82,59 @@ class NSSFOperatorCharm(CharmBase):
             self._certificates.on.certificate_expiring, self._on_certificate_expiring
         )
 
+    def _is_unit_in_non_active_status(self) -> Optional[StatusBase]:  # noqa: C901
+        """Evaluate and return the unit's current status, or None if it should be active.
+
+        Returns:
+            StatusBase: MaintenanceStatus/BlockedStatus/WaitingStatus
+            None: If none of the conditionals match
+
+        """
+        if not self.unit.is_leader():
+            # NOTE: In cases where leader status is lost before the charm is
+            # finished processing all teardown events, this prevents teardown
+            # event code from running. Luckily, for this charm, none of the
+            # teardown code is necessary to preform if we're removing the
+            # charm.
+            return BlockedStatus("Scaling is not implemented for this charm")
+
+        if not self._container.can_connect():
+            return WaitingStatus("Waiting for container to start")
+
+        if invalid_configs := self._get_invalid_configs():
+            return BlockedStatus(f"The following configurations are not valid: {invalid_configs}")
+
+        if not self.model.get_relation("fiveg_nrf") or self._nrf_relation_breaking:
+            return BlockedStatus("Waiting for fiveg_nrf relation")
+
+        if not self.model.get_relation("certificates") or self._tls_relation_breaking:
+            return BlockedStatus("Waiting for certificates relation")
+
+        if not self._nrf_data_is_available:
+            return WaitingStatus("Waiting for NRF data to be available")
+
+        if not self._container.exists(path=CONFIG_DIR):
+            return WaitingStatus("Waiting for storage to be attached")
+
+        if not _get_pod_ip():
+            return WaitingStatus("Waiting for pod IP address to be available")
+
+        if not self._certificate_is_stored():
+            return WaitingStatus("Waiting for certificates to be stored")
+
+        return None
+
+    def _on_collect_unit_status(self, event: CollectStatusEvent):
+        """Check the unit status and set to Unit when CollectStatusEvent is fired.
+
+        Args:
+            event: CollectStatusEvent
+        """
+        if status := self._is_unit_in_non_active_status():
+            event.add_status(status)
+        else:
+            event.add_status(ActiveStatus())
+
     def _configure_nssf(
         self,
         event: EventBase,
@@ -95,46 +144,20 @@ class NSSFOperatorCharm(CharmBase):
         Args:
             event (EventBase): Juju event
         """
-        if not self._container.can_connect():
-            self.unit.status = WaitingStatus("Waiting for container to start")
-            event.defer()
-            return
-        if invalid_configs := self._get_invalid_configs():
-            self.unit.status = BlockedStatus(
-                f"The following configurations are not valid: {invalid_configs}"
-            )
-            return
-        for relation in ["fiveg_nrf", "certificates"]:
-            if not self._relation_created(relation):
-                self.unit.status = BlockedStatus(f"Waiting for {relation} relation")
-                return
-        if not self._nrf_data_is_available:
-            self.unit.status = WaitingStatus("Waiting for NRF data to be available")
-            event.defer()
-            return
-        if not self._container.exists(path=CONFIG_DIR):
-            self.unit.status = WaitingStatus("Waiting for storage to be attached")
-            event.defer()
-            return
-        if not _get_pod_ip():
-            self.unit.status = WaitingStatus("Waiting for pod IP address to be available")
-            event.defer()
-            return
-        if not self._certificate_is_stored():
-            self.unit.status = WaitingStatus("Waiting for certificates to be stored")
+        if self._is_unit_in_non_active_status():
+            # Unit Status is in Maintanence or Blocked or Waiting status
             event.defer()
             return
         config_file_changed = self._apply_nssf_config()
         self._configure_nssf_service(force_restart=config_file_changed)
-        self.unit.status = ActiveStatus()
 
-    def _on_nrf_broken(self, event: EventBase) -> None:
+    def _on_nrf_broken(self, event: RelationBrokenEvent) -> None:
         """Event handler for NRF relation broken.
 
         Args:
             event (NRFBrokenEvent): Juju event
         """
-        self.unit.status = BlockedStatus("Waiting for fiveg_nrf relation")
+        self._nrf_relation_breaking = True
 
     def _on_certificates_relation_created(self, event: EventBase) -> None:
         """Generates Private key."""
@@ -143,7 +166,7 @@ class NSSFOperatorCharm(CharmBase):
             return
         self._generate_private_key()
 
-    def _on_certificates_relation_broken(self, event: EventBase) -> None:
+    def _on_certificates_relation_broken(self, event: RelationBrokenEvent) -> None:
         """Deletes TLS related artifacts and reconfigures workload."""
         if not self._container.can_connect():
             event.defer()
@@ -151,7 +174,7 @@ class NSSFOperatorCharm(CharmBase):
         self._delete_private_key()
         self._delete_csr()
         self._delete_certificate()
-        self.unit.status = BlockedStatus("Waiting for certificates relation")
+        self._tls_relation_breaking = True
 
     def _on_certificates_relation_joined(self, event: EventBase) -> None:
         """Generates CSR and requests new certificate."""
@@ -452,7 +475,10 @@ def _get_pod_ip() -> Optional[str]:
     Returns:
         str: The pod IP.
     """
-    ip_address = check_output(["unit-get", "private-address"])
+    try:
+        ip_address = check_output(["unit-get", "private-address"])
+    except FileNotFoundError:
+        return None
     return str(IPv4Address(ip_address.decode().strip())) if ip_address else None
 
 
