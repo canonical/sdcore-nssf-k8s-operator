@@ -16,7 +16,6 @@ from scenario import Container, Context, Model, Mount, Relation, State  # type: 
 from charm import NSSFOperatorCharm
 
 
-@patch("charm.KubernetesServicePatch", new=Mock)
 class TestCharm(unittest.TestCase):
     def setUp(self):
         self.ctx = Context(NSSFOperatorCharm)
