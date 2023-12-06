@@ -2,7 +2,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charmed operator for the SD-Core NSSF K8s service."""
+"""Charmed operator for the SD-Core NSSF service for K8s."""
 
 import logging
 from ipaddress import IPv4Address
@@ -37,8 +37,8 @@ CERTIFICATE_NAME = "nssf.pem"
 CERTIFICATE_COMMON_NAME = "nssf.sdcore"
 
 
-class NSSFK8sOperatorCharm(CharmBase):
-    """Main class to describe juju event handling for the SD-Core NSSF K8s operator."""
+class NSSFOperatorCharm(CharmBase):
+    """Main class to describe juju event handling for the SD-Core NSSF operator for K8s."""
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -448,4 +448,4 @@ def _get_pod_ip() -> Optional[str]:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main(NSSFK8sOperatorCharm)
+    main(NSSFOperatorCharm)
