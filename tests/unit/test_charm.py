@@ -13,12 +13,12 @@ from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Layer
 from scenario import Container, Context, Model, Mount, Relation, State  # type: ignore[import]
 
-from charm import NSSFOperatorCharm
+from charm import NSSFK8sOperatorCharm
 
 
 class TestCharm(unittest.TestCase):
     def setUp(self):
-        self.ctx = Context(NSSFOperatorCharm)
+        self.ctx = Context(NSSFK8sOperatorCharm)
         self.container = Container(name="nssf", can_connect=True)
         self.nrf_relation = Relation(
             endpoint="fiveg_nrf",
