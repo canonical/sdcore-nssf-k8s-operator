@@ -1,4 +1,4 @@
-# SD-Core NSSF Operator  for K8s
+# SD-Core NSSF Operator (k8s)
 [![CharmHub Badge](https://charmhub.io/sdcore-nssf-k8s/badge.svg)](https://charmhub.io/sdcore-nssf-k8s)
 
 Charmed Operator for the SD-Core Network Slice Selection Function (NSSF) for K8s.
