@@ -386,7 +386,7 @@ class NSSFOperatorCharm(CharmBase):
 
     @property
     def _pebble_layer(self) -> Layer:
-        """Return pebble layer for the nssf container.
+        """Return pebble layer for the NSSF container.
 
         Returns:
             Layer: Pebble Layer
