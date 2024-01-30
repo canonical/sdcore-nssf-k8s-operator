@@ -10,10 +10,10 @@ from subprocess import check_output
 from typing import Optional
 
 from charms.sdcore_nrf_k8s.v0.fiveg_nrf import NRFRequires  # type: ignore[import]
-from charms.tls_certificates_interface.v2.tls_certificates import (  # type: ignore[import]
+from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
     CertificateAvailableEvent,
     CertificateExpiringEvent,
-    TLSCertificatesRequiresV2,
+    TLSCertificatesRequiresV3,
     generate_csr,
     generate_private_key,
 )
@@ -54,7 +54,7 @@ class NSSFOperatorCharm(CharmBase):
         self._container = self.unit.get_container(self._container_name)
         self._nrf_requires = NRFRequires(charm=self, relation_name="fiveg_nrf")
         self.unit.set_ports(SBI_PORT)
-        self._certificates = TLSCertificatesRequiresV2(self, "certificates")
+        self._certificates = TLSCertificatesRequiresV3(self, "certificates")
 
         self.framework.observe(self.on.config_changed, self._configure_nssf)
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
