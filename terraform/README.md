@@ -1,72 +1,57 @@
 # SD-Core NSSF K8s Terraform Module
 
-This SD-Core NSSF K8s Terraform module aims to deploy the [sdcore-nssf-k8s charm](https://charmhub.io/sdcore-nssf-k8s) via Terraform.
+This folder contains a base [Terraform][Terraform] module for the sdcore-nssf-k8s charm.
 
-## Getting Started
+The module uses the [Terraform Juju provider][Terraform Juju provider] to model the charm
+deployment onto any Kubernetes environment managed by [Juju][Juju].
 
-### Prerequisites
+The base module is not intended to be deployed in separation (it is possible though), but should
+rather serve as a building block for higher level modules.
 
-The following software and tools needs to be installed and should be running in the local environment.
+## Module structure
 
-- `microk8s`
-- `juju 3.x`
-- `terrafom`
+- **main.tf** - Defines the Juju application to be deployed.
+- **variables.tf** - Allows customization of the deployment. Except for exposing the deployment
+  options (Juju model name, channel or application name) also allows overwriting charm's default
+  configuration.
+- **output.tf** - Responsible for integrating the module with other Terraform modules, primarily
+  by defining potential integration endpoints (charm integrations), but also by exposing
+  the application name.
+- **terraform.tf** - Defines the Terraform provider.
 
-### Deploy the sdcore-nssf-k8s charm using Terraform
+## Using sdcore-nssf-k8s base module in higher level modules
 
-Make sure that `storage` plugin is enabled for Microk8s:
+If you want to use `sdcore-nssf-k8s` base module as part of your Terraform module, import it
+like shown below:
 
-```console
-sudo microk8s enable hostpath-storage
+```text
+module "nssf" {
+  source = "git::https://github.com/canonical/sdcore-nssf-k8s-operator//terraform"
+  
+  model_name = "juju_model_name"
+  config = Optional config map
+}
 ```
 
-Add a Juju model:
+Create integrations, for instance:
 
-```console
-juju add model <model-name>
+```text
+resource "juju_integration" "nssf-nrf" {
+  model = var.model_name
+  application {
+    name     = module.nssf.app_name
+    endpoint = module.nssf.fiveg_nrf_endpoint
+  }
+  application {
+    name     = module.nrf.app_name
+    endpoint = module.nrf.fiveg_nrf_endpoint
+  }
+}
 ```
 
-Initialise the provider:
+The complete list of available integrations can be found [here][nssf-integrations].
 
-```console
-terraform init
-```
-
-Customize the configuration inputs under `terraform.tfvars` file according to requirement.
-
-Replace the values in the `terraform.tfvars` file:
-
-```yaml
-# Mandatory Config Options
-model_name             = "put your model-name here"
-certs_application_name = "put your Self Signed Certificates app name here"
-nrf_application_name   = "put your NRF app name here"
-```
-
-Create the Terraform Plan:
-
-```console
-terraform plan -var-file="terraform.tfvars" 
-```
-
-Deploy the resources:
-
-```console
-terraform apply -auto-approve 
-```
-
-### Check the Output
-
-Run `juju switch <juju model>` to switch to the target Juju model and observe the status of the applications.
-
-```console
-juju status --relations
-```
-
-### Clean up
-
-Destroy the deployment:
-
-```console
-terraform destroy -auto-approve
-```
+[Terraform]: https://www.terraform.io/
+[Terraform Juju provider]: https://registry.terraform.io/providers/juju/juju/latest
+[Juju]: https://juju.is
+[nssf-integrations]: https://charmhub.io/sdcore-nssf-k8s/integrations
