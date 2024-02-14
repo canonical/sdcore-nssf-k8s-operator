@@ -10,10 +10,10 @@ output "app_name" {
 
 output "fiveg_nrf_endpoint" {
   description = "Name of the endpoint used to integrate with the NRF."
-  value = "fiveg-nrf"
+  value       = "fiveg-nrf"
 }
 
 output "certificates_endpoint" {
   description = "Name of the endpoint used to integrate with the TLS certificates provider."
-  value = "certificates"
+  value       = "certificates"
 }
