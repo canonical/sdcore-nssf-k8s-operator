@@ -11,7 +11,6 @@ from typing import Optional
 
 from charms.sdcore_nrf_k8s.v0.fiveg_nrf import NRFRequires  # type: ignore[import]
 from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
-    CertificateAvailableEvent,
     CertificateExpiringEvent,
     TLSCertificatesRequiresV3,
     generate_csr,
@@ -57,66 +56,72 @@ class NSSFOperatorCharm(CharmBase):
         self._certificates = TLSCertificatesRequiresV3(self, "certificates")
 
         self.framework.observe(self.on.config_changed, self._configure_nssf)
+        self.framework.observe(self.on.update_status, self._configure_nssf)
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
         self.framework.observe(self.on.fiveg_nrf_relation_joined, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_broken, self._on_nrf_broken)
-        self.framework.observe(
-            self.on.certificates_relation_created, self._on_certificates_relation_created
-        )
-        self.framework.observe(
-            self.on.certificates_relation_joined, self._on_certificates_relation_joined
-        )
+        self.framework.observe(self.on.certificates_relation_joined, self._configure_nssf)
         self.framework.observe(
             self.on.certificates_relation_broken, self._on_certificates_relation_broken
         )
-        self.framework.observe(
-            self._certificates.on.certificate_available, self._on_certificate_available
-        )
+        self.framework.observe(self._certificates.on.certificate_available, self._configure_nssf)
         self.framework.observe(
             self._certificates.on.certificate_expiring, self._on_certificate_expiring
         )
 
-    def _configure_nssf(
-        self,
-        event: EventBase,
-    ) -> None:
+    def ready_to_configure(self) -> bool:
+        """Returns whether all preconditions are met to proceed with configuration."""
+        if not self._container.can_connect():
+            self.unit.status = WaitingStatus("Waiting for container to start")
+            return False
+        if invalid_configs := self._get_invalid_configs():
+            self.unit.status = BlockedStatus(
+                f"The following configurations are not valid: {invalid_configs}"
+            )
+            return False
+        for relation in ["fiveg_nrf", "certificates"]:
+            if not self._relation_created(relation):
+                self.unit.status = BlockedStatus(f"Waiting for {relation} relation")
+                return False
+        if not self._nrf_data_is_available:
+            self.unit.status = WaitingStatus("Waiting for NRF data to be available")
+            return False
+        if not self._container.exists(path=CONFIG_DIR) or not self._container.exists(
+            path=CERTS_DIR_PATH
+        ):
+            self.unit.status = WaitingStatus("Waiting for storage to be attached")
+            return False
+        if not _get_pod_ip():
+            self.unit.status = WaitingStatus("Waiting for pod IP address to be available")
+            return False
+        return True
+
+    def _configure_nssf(self, event: EventBase) -> None:
         """Configure NSSF configuration file and pebble service.
 
         Args:
             event (EventBase): Juju event
         """
-        if not self._container.can_connect():
-            self.unit.status = WaitingStatus("Waiting for container to start")
-            event.defer()
+        if not self.ready_to_configure():
             return
-        if invalid_configs := self._get_invalid_configs():
-            self.unit.status = BlockedStatus(
-                f"The following configurations are not valid: {invalid_configs}"
-            )
-            return
-        for relation in ["fiveg_nrf", "certificates"]:
-            if not self._relation_created(relation):
-                self.unit.status = BlockedStatus(f"Waiting for {relation} relation")
-                return
-        if not self._nrf_data_is_available:
-            self.unit.status = WaitingStatus("Waiting for NRF data to be available")
-            event.defer()
-            return
-        if not self._container.exists(path=CONFIG_DIR):
-            self.unit.status = WaitingStatus("Waiting for storage to be attached")
-            event.defer()
-            return
-        if not _get_pod_ip():
-            self.unit.status = WaitingStatus("Waiting for pod IP address to be available")
-            event.defer()
-            return
-        if not self._certificate_is_stored():
+
+        if not self._private_key_is_stored():
+            self._generate_private_key()
+        if not self._csr_is_stored():
+            self._request_new_certificate()
+
+        provider_certificate = self._get_current_provider_certificate()
+        if not provider_certificate:
             self.unit.status = WaitingStatus("Waiting for certificates to be stored")
-            event.defer()
             return
+
+        certificate_was_updated = self._update_certificate(
+            provider_certificate=provider_certificate
+        )
         config_file_changed = self._apply_nssf_config()
-        self._configure_nssf_service(force_restart=config_file_changed)
+        should_restart = config_file_changed or certificate_was_updated
+        self._configure_nssf_service(force_restart=should_restart)
         self.unit.status = ActiveStatus()
 
     def _on_nrf_broken(self, event: EventBase) -> None:
@@ -126,13 +131,6 @@ class NSSFOperatorCharm(CharmBase):
             event (NRFBrokenEvent): Juju event
         """
         self.unit.status = BlockedStatus("Waiting for fiveg_nrf relation")
-
-    def _on_certificates_relation_created(self, event: EventBase) -> None:
-        """Generates Private key."""
-        if not self._container.can_connect():
-            event.defer()
-            return
-        self._generate_private_key()
 
     def _on_certificates_relation_broken(self, event: EventBase) -> None:
         """Deletes TLS related artifacts and reconfigures workload."""
@@ -144,32 +142,30 @@ class NSSFOperatorCharm(CharmBase):
         self._delete_certificate()
         self.unit.status = BlockedStatus("Waiting for certificates relation")
 
-    def _on_certificates_relation_joined(self, event: EventBase) -> None:
-        """Generates CSR and requests new certificate."""
-        if not self._container.can_connect():
-            event.defer()
-            return
-        if not self._private_key_is_stored():
-            event.defer()
-            return
-        if self._certificate_is_stored():
-            return
+    def _get_current_provider_certificate(self) -> str | None:
+        """Compares the current certificate request to what is in the interface.
 
-        self._request_new_certificate()
+        Returns The current valid provider certificate if present
+        """
+        csr = self._get_stored_csr()
+        for provider_certificate in self._certificates.get_assigned_certificates():
+            if provider_certificate.csr == csr:
+                return provider_certificate.certificate
+        return None
 
-    def _on_certificate_available(self, event: CertificateAvailableEvent) -> None:
-        """Pushes certificate to workload and configures workload."""
-        if not self._container.can_connect():
-            event.defer()
-            return
-        if not self._csr_is_stored():
-            logger.warning("Certificate is available but no CSR is stored")
-            return
-        if event.certificate_signing_request != self._get_stored_csr():
-            logger.debug("Stored CSR doesn't match one in certificate available event")
-            return
-        self._store_certificate(event.certificate)
-        self._configure_nssf(event)
+    def _update_certificate(self, provider_certificate) -> bool:
+        """Compares the provided certificate to what is stored.
+
+        Returns True if the certificate was updated
+        """
+        existing_certificate = (
+            self._get_stored_certificate() if self._certificate_is_stored() else ""
+        )
+
+        if existing_certificate != provider_certificate:
+            self._store_certificate(certificate=provider_certificate)
+            return True
+        return False
 
     def _on_certificate_expiring(self, event: CertificateExpiringEvent) -> None:
         """Requests new certificate."""
