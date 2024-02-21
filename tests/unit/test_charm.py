@@ -9,36 +9,14 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from charms.tls_certificates_interface.v3.tls_certificates import ProviderCertificate
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Layer
 from scenario import Container, Context, Model, Mount, Relation, State  # type: ignore[import]
 
 from charm import NSSFOperatorCharm
 
-
-def get_tls_relation_with_certificates(certificate: str, csr: str):
-    """Returns a certificate Relation containing the given certificate and csr."""
-    tls_relation = Relation(
-        endpoint="certificates",
-        remote_app_name="tls-provider",
-        local_unit_data={
-            "certificate_signing_requests": json.dumps([{"certificate_signing_request": csr}])
-        },
-        remote_app_data={
-            "certificates": json.dumps(
-                [
-                    {
-                        "certificate": certificate,
-                        "certificate_signing_request": csr,
-                        "ca": "abc",
-                        "chain": ["abc", "def"],
-                    }
-                ]
-            )
-        },
-    )
-    return tls_relation
-
+CERTIFICATES_LIB_PATH = "charms.tls_certificates_interface.v3.tls_certificates"
 
 class TestCharm(unittest.TestCase):
     def setUp(self):
@@ -225,9 +203,10 @@ class TestCharm(unittest.TestCase):
             WaitingStatus("Waiting for certificates to be stored"),
         )
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("charm.check_output")
     def test_given_relations_created_and_nrf_data_available_and_certificates_stored_when_pebble_ready_then_config_file_rendered_and_pushed(  # noqa: E501
-        self, patch_check_output
+        self, patch_check_output, patch_get_assigned_certificates
     ):
         csr = "whatever csr content"
         certificate = "Whatever certificate content"
@@ -243,12 +222,15 @@ class TestCharm(unittest.TestCase):
         with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
             nssf_csr_file.write(csr)
 
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
 
         state_in = State(
             leader=True,
             containers=[container],
-            relations=[self.nrf_relation, tls_relation],
+            relations=[self.nrf_relation, self.tls_relation],
             model=Model(name="whatever"),
         )
         patch_check_output.return_value = b"1.1.1.1"
@@ -263,9 +245,10 @@ class TestCharm(unittest.TestCase):
             expected_content = expected.read().strip()
             self.assertEqual(actual_content, expected_content)
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("charm.check_output")
     def test_config_pushed_but_content_changed_when_pebble_ready_then_new_config_content_is_pushed(  # noqa: E501
-        self, patch_check_output
+        self, patch_check_output, patch_get_assigned_certificates
     ):
         cert_dir = tempfile.TemporaryDirectory()
         config_dir = tempfile.TemporaryDirectory()
@@ -281,11 +264,15 @@ class TestCharm(unittest.TestCase):
         with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
             nssf_csr_file.write(csr)
 
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
         state_in = State(
             leader=True,
             containers=[container],
-            relations=[self.nrf_relation, tls_relation],
+            relations=[self.nrf_relation, self.tls_relation],
             model=Model(name="whatever"),
         )
         patch_check_output.return_value = "1.1.1.1".encode()
@@ -306,9 +293,10 @@ class TestCharm(unittest.TestCase):
             expected_content = expected.read().strip()
             self.assertEqual(actual_content, expected_content)
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("charm.check_output")
     def test_given_relations_available_and_config_pushed_when_pebble_ready_then_pebble_layer_is_added_correctly(  # noqa: E501
-        self, patch_check_output
+        self, patch_check_output, patch_get_assigned_certificates
     ):
         cert_dir = tempfile.TemporaryDirectory()
         config_dir = tempfile.TemporaryDirectory()
@@ -320,11 +308,15 @@ class TestCharm(unittest.TestCase):
         )
         csr = "never gonna say goodbye"
         certificate = "Whatever certificate content"
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
         state_in = State(
             leader=True,
             containers=[container],
-            relations=[self.nrf_relation, tls_relation],
+            relations=[self.nrf_relation, self.tls_relation],
         )
         patch_check_output.return_value = "1.1.1.1".encode()
 
@@ -353,9 +345,10 @@ class TestCharm(unittest.TestCase):
         updated_plan = state_out.containers[0].layers["nssf"]
         self.assertEqual(expected_plan, updated_plan)
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("charm.check_output")
     def test_relations_available_and_config_pushed_and_pebble_updated_when_pebble_ready_then_status_is_active(  # noqa: E501
-        self, patch_check_output
+        self, patch_check_output, patch_get_assigned_certificates
     ):
         cert_dir = tempfile.TemporaryDirectory()
         config_dir = tempfile.TemporaryDirectory()
@@ -367,13 +360,18 @@ class TestCharm(unittest.TestCase):
         )
         csr = "never gonna say goodbye"
         certificate = "Whatever certificate content"
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
+
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
         with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
             nssf_csr_file.write(csr)
         state_in = State(
             leader=True,
             containers=[container],
-            relations=[self.nrf_relation, tls_relation],
+            relations=[self.nrf_relation, self.tls_relation],
         )
         patch_check_output.return_value = "1.1.1.1".encode()
 
@@ -407,10 +405,11 @@ class TestCharm(unittest.TestCase):
             WaitingStatus("Waiting for pod IP address to be available"),
         )
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("ops.model.Container.restart")
     @patch("charm.check_output")
     def test_relations_available_and_config_pushed_and_pebble_updated_when_pebble_ready_then_service_is_restarted(  # noqa: E501
-        self, patch_check_output, patch_restart
+        self, patch_check_output, patch_restart, patch_get_assigned_certificates
     ):
 
         config_dir = tempfile.TemporaryDirectory()
@@ -424,7 +423,11 @@ class TestCharm(unittest.TestCase):
         csr = "never gonna say goodbye"
         certificate = "Whatever certificate content"
 
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
         with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
             nssf_csr_file.write(csr)
 
@@ -433,7 +436,7 @@ class TestCharm(unittest.TestCase):
         state_in = State(
             leader=True,
             containers=[container],
-            relations=[self.nrf_relation, tls_relation],
+            relations=[self.nrf_relation, self.tls_relation],
         )
         patch_check_output.return_value = "1.1.1.1".encode()
 
@@ -441,10 +444,11 @@ class TestCharm(unittest.TestCase):
 
         patch_restart.assert_called_with("nssf")
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("ops.model.Container.restart")
     @patch("charm.check_output")
     def test_relations_available_and_config_pushed_and_pebble_layer_already_applied_when_pebble_ready_then_service_is_not_restarted(  # noqa: E501
-        self, patch_check_output, patch_restart
+        self, patch_check_output, patch_restart, patch_get_assigned_certificates
     ):
         applied_plan = Layer(
             {
@@ -479,8 +483,11 @@ class TestCharm(unittest.TestCase):
         )
         csr = "never gonna say goodbye"
         certificate = "Whatever certificate content"
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
 
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
         with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
             nssf_csr_file.write(csr)
 
@@ -490,7 +497,7 @@ class TestCharm(unittest.TestCase):
         state_in = State(
             leader=True,
             containers=[container],
-            relations=[self.nrf_relation, tls_relation],
+            relations=[self.nrf_relation, self.tls_relation],
         )
         patch_check_output.return_value = "1.1.1.1".encode()
 
@@ -498,10 +505,11 @@ class TestCharm(unittest.TestCase):
 
         patch_restart.assert_not_called()
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("ops.model.Container.restart")
     @patch("charm.check_output")
     def test_config_pushed_but_content_changed_and_layer_already_applied_when_pebble_ready_then_nssf_service_is_restarted(  # noqa: E501
-        self, patch_check_output, patch_restart
+        self, patch_check_output, patch_restart, patch_get_assigned_certificates
     ):
         config_dir = tempfile.TemporaryDirectory()
         cert_dir = tempfile.TemporaryDirectory()
@@ -541,11 +549,15 @@ class TestCharm(unittest.TestCase):
         with open(Path(cert_dir.name) / "nssf.pem", "w") as nssf_cert_file:
             nssf_cert_file.write(certificate)
 
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
         state_in = State(
             leader=True,
             containers=[container],
-            relations=[self.nrf_relation, tls_relation],
+            relations=[self.nrf_relation, self.tls_relation],
             model=Model(name="whatever"),
         )
         patch_check_output.return_value = "1.1.1.1".encode()
@@ -632,7 +644,7 @@ class TestCharm(unittest.TestCase):
         patch_remove_path.assert_any_call(path="/support/TLS/nssf.csr")
 
     @patch(
-        "charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
+        f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
         new=Mock,
     )
     @patch("charm.check_output")
@@ -666,7 +678,7 @@ class TestCharm(unittest.TestCase):
             self.assertEqual(actual_content, csr.decode())
 
     @patch(
-        "charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
+        f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
     )
     @patch("charm.check_output")
     @patch("charm.generate_csr")
@@ -700,7 +712,7 @@ class TestCharm(unittest.TestCase):
         patch_request_certificate_creation.assert_called_with(certificate_signing_request=csr)
 
     @patch(
-        "charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
+        f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
     )
     @patch("charm.check_output")
     def test_given_certificate_already_requested_when_on_certificates_relation_joined_then_cert_is_not_requested(  # noqa: E501
@@ -732,9 +744,10 @@ class TestCharm(unittest.TestCase):
 
         patch_request_certificate_creation.assert_not_called()
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("charm.check_output")
     def test_given_csr_matches_stored_one_when_certificate_available_then_certificate_is_pushed(
-        self, patch_check_output
+        self, patch_check_output, patch_get_assigned_certificates
     ):
         cert_dir = tempfile.TemporaryDirectory()
         config_dir = tempfile.TemporaryDirectory()
@@ -748,9 +761,33 @@ class TestCharm(unittest.TestCase):
         patch_check_output.return_value = b"1.2.3.4"
         csr = "never gonna make you cry"
         certificate = "Whatever certificate content"
-        tls_relation = get_tls_relation_with_certificates(certificate, csr)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = certificate
+        provider_certificate.csr = csr
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
         with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
             nssf_csr_file.write(csr)
+
+        tls_relation = Relation(
+            endpoint="certificates",
+            remote_app_name="tls-provider",
+            local_unit_data={
+                "certificate_signing_requests": json.dumps([{"certificate_signing_request": csr}])
+            },
+            remote_app_data={
+                "certificates": json.dumps(
+                    [
+                        {
+                            "certificate": certificate,
+                            "certificate_signing_request": csr,
+                            "ca": "abc",
+                            "chain": ["abc", "def"],
+                        }
+                    ]
+                )
+            },
+        )
         state_in = State(
             leader=True,
             containers=[container],
@@ -763,9 +800,10 @@ class TestCharm(unittest.TestCase):
             actual_content = nssf_pem_file.read()
             self.assertEqual(actual_content, certificate)
 
+    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
     @patch("charm.check_output")
     def test_given_csr_doesnt_match_stored_one_when_certificate_available_then_status_is_waiting(  # noqa: E501
-        self, patch_check_output
+        self, patch_check_output, patch_get_assigned_certificates
     ):
         patch_check_output.return_value = b"1.2.3.4"
         stored_csr = "never gonna say goodbye"
@@ -782,7 +820,28 @@ class TestCharm(unittest.TestCase):
 
         relation_csr = "CSR in relation data (different from stored)"
         certificate = "Whatever certificate content"
-        tls_relation = get_tls_relation_with_certificates(certificate, relation_csr)
+
+        tls_relation = Relation(
+            endpoint="certificates",
+            remote_app_name="tls-provider",
+            local_unit_data={
+                "certificate_signing_requests": json.dumps(
+                    [{"certificate_signing_request": relation_csr}]
+                )
+            },
+            remote_app_data={
+                "certificates": json.dumps(
+                    [
+                        {
+                            "certificate": certificate,
+                            "certificate_signing_request": relation_csr,
+                            "ca": "abc",
+                            "chain": ["abc", "def"],
+                        }
+                    ]
+                )
+            },
+        )
         state_in = State(
             leader=True,
             containers=[container],
