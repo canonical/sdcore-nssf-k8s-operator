@@ -9,7 +9,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
-from charms.tls_certificates_interface.v3.tls_certificates import ProviderCertificate
+from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
+    ProviderCertificate,
+)
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Layer
 from scenario import Container, Context, Model, Mount, Relation, State  # type: ignore[import]
@@ -17,6 +19,7 @@ from scenario import Container, Context, Model, Mount, Relation, State  # type: 
 from charm import NSSFOperatorCharm
 
 CERTIFICATES_LIB_PATH = "charms.tls_certificates_interface.v3.tls_certificates"
+
 
 class TestCharm(unittest.TestCase):
     def setUp(self):
