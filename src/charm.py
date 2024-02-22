@@ -70,40 +70,34 @@ class NSSFOperatorCharm(CharmBase):
             self._certificates.on.certificate_expiring, self._on_certificate_expiring
         )
 
-    def ready_to_configure(self) -> bool:
-        """Returns whether all preconditions are met to proceed with configuration."""
-        if not self._container.can_connect():
-            self.unit.status = WaitingStatus("Waiting for container to start")
-            return False
-        if invalid_configs := self._get_invalid_configs():
-            self.unit.status = BlockedStatus(
-                f"The following configurations are not valid: {invalid_configs}"
-            )
-            return False
-        for relation in ["fiveg_nrf", "certificates"]:
-            if not self._relation_created(relation):
-                self.unit.status = BlockedStatus(f"Waiting for {relation} relation")
-                return False
-        if not self._nrf_data_is_available:
-            self.unit.status = WaitingStatus("Waiting for NRF data to be available")
-            return False
-        if not self._container.exists(path=CONFIG_DIR) or not self._container.exists(
-            path=CERTS_DIR_PATH
-        ):
-            self.unit.status = WaitingStatus("Waiting for storage to be attached")
-            return False
-        if not _get_pod_ip():
-            self.unit.status = WaitingStatus("Waiting for pod IP address to be available")
-            return False
-        return True
-
-    def _configure_nssf(self, event: EventBase) -> None:
+    def _configure_nssf(self, event: EventBase) -> None:  # noqa: C901
         """Configure NSSF configuration file and pebble service.
 
         Args:
             event (EventBase): Juju event
         """
-        if not self.ready_to_configure():
+        if not self._container.can_connect():
+            self.unit.status = WaitingStatus("Waiting for container to start")
+            return
+        if invalid_configs := self._get_invalid_configs():
+            self.unit.status = BlockedStatus(
+                f"The following configurations are not valid: {invalid_configs}"
+            )
+            return
+        for relation in ["fiveg_nrf", "certificates"]:
+            if not self._relation_created(relation):
+                self.unit.status = BlockedStatus(f"Waiting for {relation} relation")
+                return
+        if not self._nrf_data_is_available:
+            self.unit.status = WaitingStatus("Waiting for NRF data to be available")
+            return
+        if not self._container.exists(path=CONFIG_DIR) or not self._container.exists(
+            path=CERTS_DIR_PATH
+        ):
+            self.unit.status = WaitingStatus("Waiting for storage to be attached")
+            return
+        if not _get_pod_ip():
+            self.unit.status = WaitingStatus("Waiting for pod IP address to be available")
             return
 
         if not self._private_key_is_stored():
