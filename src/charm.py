@@ -36,6 +36,8 @@ CSR_NAME = "nssf.csr"
 CERTIFICATE_NAME = "nssf.pem"
 CERTIFICATE_COMMON_NAME = "nssf.sdcore"
 LOGGING_RELATION_NAME = "logging"
+TLS_RELATION_NAME = "certificates"
+NRF_RELATION_NAME = "fiveg_nrf"
 
 
 class NSSFOperatorCharm(CharmBase):
@@ -53,9 +55,9 @@ class NSSFOperatorCharm(CharmBase):
             return
         self._container_name = self._service_name = "nssf"
         self._container = self.unit.get_container(self._container_name)
-        self._nrf_requires = NRFRequires(charm=self, relation_name="fiveg_nrf")
+        self._nrf_requires = NRFRequires(charm=self, relation_name=NRF_RELATION_NAME)
         self.unit.set_ports(SBI_PORT)
-        self._certificates = TLSCertificatesRequiresV3(self, "certificates")
+        self._certificates = TLSCertificatesRequiresV3(self, TLS_RELATION_NAME)
         self._logging = LogForwarder(charm=self, relation_name=LOGGING_RELATION_NAME)
         self.framework.observe(self.on.config_changed, self._configure_nssf)
         self.framework.observe(self.on.update_status, self._configure_nssf)
