@@ -115,6 +115,8 @@ class TestCharm(unittest.TestCase):
         self.harness.set_can_connect(container=self.container_name, val=True)
         self._create_certificates_relation()
         self.harness.container_pebble_ready(self.container_name)
+
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.model.unit.status,
             BlockedStatus("Waiting for fiveg_nrf relation"),
@@ -126,6 +128,8 @@ class TestCharm(unittest.TestCase):
         self.harness.set_can_connect(container=self.container_name, val=True)
         self._create_nrf_relation()
         self.harness.container_pebble_ready(self.container_name)
+
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.model.unit.status,
             BlockedStatus("Waiting for certificates relation"),
@@ -154,6 +158,7 @@ class TestCharm(unittest.TestCase):
         self.harness.container_pebble_ready(self.container_name)
 
         self.harness.remove_relation(nrf_relation_id)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.model.unit.status,
             BlockedStatus("Waiting for fiveg_nrf relation"),
@@ -186,8 +191,10 @@ class TestCharm(unittest.TestCase):
         cert_rel_id = self._create_certificates_relation()
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(self.harness.charm.unit.status, ActiveStatus())
         self.harness.remove_relation(cert_rel_id)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.charm.unit.status, BlockedStatus("Waiting for certificates relation")
         )
@@ -219,6 +226,7 @@ class TestCharm(unittest.TestCase):
 
         self.harness.remove_relation(cert_rel_id)
         self.harness.set_can_connect(container=self.container_name, val=False)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.charm.unit.status, WaitingStatus("Waiting for container to start")
         )
@@ -227,6 +235,7 @@ class TestCharm(unittest.TestCase):
         self.harness.add_relation(relation_name=NRF_RELATION_NAME, remote_app="some_nrf_app")
         self._create_certificates_relation()
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.model.unit.status, WaitingStatus("Waiting for NRF data to be available")
         )
@@ -257,6 +266,7 @@ class TestCharm(unittest.TestCase):
         (root / CERT_PATH).write_text(STORED_CERTIFICATE)
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.charm.unit.status, WaitingStatus("Waiting for storage to be attached")
         )
@@ -286,6 +296,7 @@ class TestCharm(unittest.TestCase):
         (root / CONFIG_PATH).write_text("super different config file content")
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.charm.unit.status, WaitingStatus("Waiting for storage to be attached")
         )
@@ -313,6 +324,7 @@ class TestCharm(unittest.TestCase):
         (root / CONFIG_PATH).write_text("super different config file content")
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.charm.unit.status, WaitingStatus("Waiting for certificates to be stored")
         )
@@ -459,6 +471,7 @@ class TestCharm(unittest.TestCase):
         self._create_certificates_relation()
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(self.harness.charm.unit.status, ActiveStatus())
 
     @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
@@ -487,6 +500,7 @@ class TestCharm(unittest.TestCase):
         (root / CONFIG_PATH).write_text("super different config file content")
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.charm.unit.status,
             WaitingStatus("Waiting for pod IP address to be available"),
@@ -519,6 +533,7 @@ class TestCharm(unittest.TestCase):
         self._create_certificates_relation()
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(self.harness.model.unit.status, ActiveStatus())
         patch_restart.assert_called_with(self.container_name)
 
@@ -588,6 +603,7 @@ class TestCharm(unittest.TestCase):
         self._create_certificates_relation()
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(self.harness.model.unit.status, ActiveStatus(""))
         patch_restart.assert_called_once_with(self.container_name)
 
@@ -601,6 +617,7 @@ class TestCharm(unittest.TestCase):
         patch_nrf_url.return_value = VALID_NRF_URL
         self._create_certificates_relation()
         self._create_nrf_relation()
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.model.unit.status,
             WaitingStatus("Waiting for container to start"),
@@ -615,6 +632,7 @@ class TestCharm(unittest.TestCase):
         self._create_nrf_relation()
         self._create_certificates_relation()
 
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.model.unit.status,
             WaitingStatus("Waiting for container to start"),
@@ -789,6 +807,7 @@ class TestCharm(unittest.TestCase):
         patch_get_assigned_certificates.return_value = [provider_certificate]
 
         self.harness.container_pebble_ready(self.container_name)
+        self.harness.evaluate_status()
         self.assertEqual(
             self.harness.model.unit.status,
             WaitingStatus("Waiting for certificates to be stored"),
