@@ -478,6 +478,37 @@ class TestCharm(unittest.TestCase):
     @patch("charm.check_output")
     @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     @patch("ops.model.Container.restart")
+    def test_relations_available_and_config_pushed_and_pebble_updated_when_pebble_is_not_ready_then_status_is_waiting_for_service(  # noqa: E501
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
+    ):
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / KEY_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
+
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
+        self.harness.evaluate_status()
+        self.assertEqual(
+            self.harness.charm.unit.status, WaitingStatus("Waiting for NSSF service to start")
+        )
+
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_ip_not_available_when_pebble_ready_then_status_is_waiting(
         self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):

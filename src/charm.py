@@ -71,7 +71,6 @@ class NSSFOperatorCharm(CharmBase):
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
         self.framework.observe(self.on.fiveg_nrf_relation_joined, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
-        self.framework.observe(self._nrf_requires.on.nrf_broken, self._configure_nssf)
         self.framework.observe(self.on.certificates_relation_joined, self._configure_nssf)
         self.framework.observe(
             self.on.certificates_relation_broken, self._on_certificates_relation_broken
@@ -144,7 +143,7 @@ class NSSFOperatorCharm(CharmBase):
 
         event.add_status(ActiveStatus())
 
-    def ready_to_configure(self) -> bool:
+    def _ready_to_configure(self) -> bool:
         """Returns whether the preconditions are met to proceed with the configuration.
 
         Returns:
@@ -201,7 +200,7 @@ class NSSFOperatorCharm(CharmBase):
         Args:
             event (EventBase): Juju event
         """
-        if not self.ready_to_configure():
+        if not self._ready_to_configure():
             logger.info("The preconditions for the configuration are not met yet.")
             return
 
@@ -236,11 +235,9 @@ class NSSFOperatorCharm(CharmBase):
         Returns:
             True if config update is required else False
         """
-        if not self._config_file_is_written() or not self._config_file_content_matches(
+        return not self._config_file_is_written() or not self._config_file_content_matches(
             content=content
-        ):
-            return True
-        return False
+        )
 
     def _config_file_is_written(self) -> bool:
         """Returns whether the config file was written to the workload container.
