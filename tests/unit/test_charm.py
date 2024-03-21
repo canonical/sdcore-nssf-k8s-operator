@@ -1,861 +1,824 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-
-import json
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
-import pytest
+import yaml
 from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
     ProviderCertificate,
 )
+from ops import testing
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
-from ops.pebble import Layer
-from scenario import Container, Context, Model, Mount, Relation, State  # type: ignore[import]
 
-from charm import NSSFOperatorCharm
+from charm import CONFIG_FILE_NAME, NRF_RELATION_NAME, TLS_RELATION_NAME, NSSFOperatorCharm
 
-CERTIFICATES_LIB_PATH = "charms.tls_certificates_interface.v3.tls_certificates"
+POD_IP = b"1.1.1.1"
+PRIVATE_KEY = b"whatever key content"
+VALID_NRF_URL = "http://nrf:8081"
+EXPECTED_CONFIG_FILE_PATH = "tests/unit/expected_config/config.conf"
+CSR_PATH = "support/TLS/nssf.csr"
+KEY_PATH = "support/TLS/nssf.key"
+CERT_PATH = "support/TLS/nssf.pem"
+CONFIG_PATH = f"free5gc/config/{CONFIG_FILE_NAME}"
+CERTIFICATES_LIB = (
+    "charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3"
+)
+STORED_CERTIFICATE = "whatever certificate content"
+STORED_CSR = b"whatever csr content"
+EXPECTED_PEBBLE_PLAN = {
+    "services": {
+        "nssf": {
+            "startup": "enabled",
+            "override": "replace",
+            "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
+            "environment": {
+                "GOTRACEBACK": "crash",
+                "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
+                "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
+                "GRPC_TRACE": "all",
+                "GRPC_VERBOSITY": "DEBUG",
+                "POD_IP": "1.1.1.1",
+                "MANAGED_BY_CONFIG_POD": "true",
+            },
+        }
+    }
+}
 
 
 class TestCharm(unittest.TestCase):
     def setUp(self):
-        self.ctx = Context(NSSFOperatorCharm)
-        self.container = Container(name="nssf", can_connect=True)
-        self.nrf_relation = Relation(
-            endpoint="fiveg_nrf",
-            remote_app_name="remote",
-            remote_app_data={"url": "http://nrf:8081"},
+        self.maxDiff = None
+        self.namespace = "whatever"
+        self.metadata = self._get_metadata()
+        self.container_name = list(self.metadata["containers"].keys())[0]
+        self.harness = testing.Harness(NSSFOperatorCharm)
+        self.harness.set_model_name(name=self.namespace)
+        self.addCleanup(self.harness.cleanup)
+        self.harness.set_leader(is_leader=True)
+        self.harness.begin()
+
+    @staticmethod
+    def _get_metadata() -> dict:
+        """Reads `metadata.yaml` and returns it as a dictionary.
+
+        Returns:
+            dics: metadata.yaml as a dictionary.
+        """
+        with open("metadata.yaml", "r") as f:
+            data = yaml.safe_load(f)
+        return data
+
+    @staticmethod
+    def _read_file(path: str) -> str:
+        """Reads a file and returns as a string.
+
+        Args:
+            path (str): path to the file.
+
+        Returns:
+            str: content of the file.
+        """
+        with open(path, "r") as f:
+            content = f.read()
+        return content
+
+    def _create_nrf_relation(self) -> int:
+        """Creates NRF relation.
+
+        Returns:
+            int: relation id.
+        """
+        relation_id = self.harness.add_relation(
+            relation_name=NRF_RELATION_NAME, remote_app="nrf-operator"
         )
-        self.tls_relation = Relation(
-            endpoint="certificates",
-            remote_app_name="tls-provider",
+        self.harness.add_relation_unit(relation_id=relation_id, remote_unit_name="nrf-operator/0")
+        return relation_id
+
+    def _create_certificates_relation(self) -> int:
+        """Creates certificates relation.
+
+        Returns:
+            int: relation id.
+        """
+        relation_id = self.harness.add_relation(
+            relation_name=TLS_RELATION_NAME, remote_app="tls-certificates-operator"
         )
+        self.harness.add_relation_unit(
+            relation_id=relation_id, remote_unit_name="tls-certificates-operator/0"
+        )
+        return relation_id
 
-    def test_given_fiveg_nrf_relation_not_created_when_pebble_ready_then_status_is_blocked(self):
-        state_in = State(containers=[self.container], leader=True)
-
-        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
-
+    def test_given_fiveg_nrf_relation_not_created_when_pebble_ready_then_status_is_blocked(
+        self,
+    ):
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        self._create_certificates_relation()
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
+            self.harness.model.unit.status,
             BlockedStatus("Waiting for fiveg_nrf relation"),
         )
 
     def test_given_certificates_relation_not_created_when_pebble_ready_then_status_is_blocked(
         self,
     ):
-        state_in = State(
-            leader=True,
-            containers=[self.container],
-            relations=[self.nrf_relation],
-        )
-
-        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
-
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        self._create_nrf_relation()
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
+            self.harness.model.unit.status,
             BlockedStatus("Waiting for certificates relation"),
         )
 
     @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_nssf_charm_in_active_status_when_nrf_relation_breaks_then_status_is_blocked(
-        self, patch_check_output
+        self, _, patched_nrf_url, patch_check_output
     ):
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation],
-            unit_status=ActiveStatus(),
-        )
-        patch_check_output.return_value = "1.1.1.1".encode()
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        state_out = self.ctx.run(self.nrf_relation.broken_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
 
+        self._create_certificates_relation()
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patched_nrf_url.return_value = VALID_NRF_URL
+        nrf_relation_id = self._create_nrf_relation()
+
+        self.harness.container_pebble_ready(self.container_name)
+
+        self.harness.remove_relation(nrf_relation_id)
         self.assertEqual(
-            state_out.unit_status,
+            self.harness.model.unit.status,
             BlockedStatus("Waiting for fiveg_nrf relation"),
         )
 
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_nssf_charm_in_active_status_when_certificates_relation_breaks_then_status_is_blocked(  # noqa: E501
-        self,
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-            unit_status=ActiveStatus(),
-        )
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        state_out = self.ctx.run(self.tls_relation.broken_event, state_in)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
+        patch_get_assigned_certificates.return_value = [provider_certificate]
 
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
+
+        self._create_nrf_relation()
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        cert_rel_id = self._create_certificates_relation()
+
+        self.harness.container_pebble_ready(self.container_name)
+        self.assertEqual(self.harness.charm.unit.status, ActiveStatus())
+        self.harness.remove_relation(cert_rel_id)
         self.assertEqual(
-            state_out.unit_status,
-            BlockedStatus("Waiting for certificates relation"),
+            self.harness.charm.unit.status, BlockedStatus("Waiting for certificates relation")
         )
 
-    def test_given_container_cannot_connect_when_certificates_relation_breaks_then_event_defer(  # noqa: E501
-        self,
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
+    def test_given_container_cannot_connect_when_certificates_relation_breaks_then_waiting_for_container_to_start(  # noqa: E501
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
-            can_connect=False,
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        state_out = self.ctx.run(self.tls_relation.broken_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
+        self._create_nrf_relation()
+        patch_check_output.return_value = POD_IP
+        patch_nrf_url.return_value = VALID_NRF_URL
+        cert_rel_id = self._create_certificates_relation()
 
-        self.assertEqual(state_out.deferred[0].name, "certificates_relation_broken")
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
+
+        self.harness.remove_relation(cert_rel_id)
+        self.harness.set_can_connect(container=self.container_name, val=False)
+        self.assertEqual(
+            self.harness.charm.unit.status, WaitingStatus("Waiting for container to start")
+        )
 
     def test_given_nrf_data_not_available_when_pebble_ready_then_status_is_waiting(self):
-        nrf_relation = Relation("fiveg_nrf")
-        state_in = State(
-            leader=True,
-            containers=[self.container],
-            relations=[nrf_relation, self.tls_relation],
-        )
-
-        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
-
+        self.harness.add_relation(relation_name=NRF_RELATION_NAME, remote_app="some_nrf_app")
+        self._create_certificates_relation()
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
-            WaitingStatus("Waiting for NRF data to be available"),
+            self.harness.model.unit.status, WaitingStatus("Waiting for NRF data to be available")
         )
 
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_relation_created_and_nrf_data_available_and_config_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
-        self,
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        cert_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={"cert_dir": Mount("/support/TLS", cert_dir.name)},
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        self.harness.add_storage(storage_name="certs", attach=True)
 
-        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
 
+        self._create_nrf_relation()
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_certificates_relation()
+
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
-            WaitingStatus("Waiting for storage to be attached"),
+            self.harness.charm.unit.status, WaitingStatus("Waiting for storage to be attached")
         )
-        self.assertEqual(len(state_out.deferred), 0)
 
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_relations_created_and_nrf_data_available_and_certs_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
-        self,
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={"config_dir": Mount("/free5gc/config", config_dir.name)},
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
 
+        self._create_nrf_relation()
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_certificates_relation()
+
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
+        (root / CONFIG_PATH).write_text("super different config file content")
+
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
-            WaitingStatus("Waiting for storage to be attached"),
+            self.harness.charm.unit.status, WaitingStatus("Waiting for storage to be attached")
         )
-        self.assertEqual(len(state_out.deferred), 0)
 
     @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_relations_created_and_nrf_data_available_and_certificates_not_stored_when_pebble_ready_then_status_is_waiting(  # noqa: E501
-        self, patch_check_output
+        self,
+        _,
+        patch_nrf_url,
+        patch_check_output,
     ):
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        patch_check_output.return_value = b"1.1.1.1"
-        state_out = self.ctx.run(self.container.pebble_ready_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
 
+        self._create_nrf_relation()
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_certificates_relation()
+
+        (root / CONFIG_PATH).write_text("super different config file content")
+
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
-            WaitingStatus("Waiting for certificates to be stored"),
+            self.harness.charm.unit.status, WaitingStatus("Waiting for certificates to be stored")
         )
 
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charm.generate_csr")
     @patch("charm.check_output")
+    @patch("charm.generate_private_key")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     def test_given_relations_created_and_nrf_data_available_and_certificates_stored_when_pebble_ready_then_config_file_rendered_and_pushed(  # noqa: E501
-        self, patch_check_output, patch_get_assigned_certificates
+        self,
+        patch_nrf_url,
+        patch_generate_private_key,
+        patch_check_output,
+        patch_generate_csr,
+        patch_get_assigned_certificates,
     ):
-        csr = "whatever csr content"
-        certificate = "Whatever certificate content"
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
-
+        patch_generate_private_key.return_value = PRIVATE_KEY
+        patch_generate_csr.return_value = STORED_CSR
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
-        patch_get_assigned_certificates.return_value = [provider_certificate]
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
+        patch_get_assigned_certificates.return_value = [
+            provider_certificate,
+        ]
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-            model=Model(name="whatever"),
-        )
-        patch_check_output.return_value = b"1.1.1.1"
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
 
-        self.ctx.run(container.pebble_ready_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
 
-        with (
-            open(Path(config_dir.name) / "nssfcfg.conf") as actual,
-            open(Path(__file__).parent / "expected_config" / "config.conf") as expected,
-        ):
-            actual_content = actual.read()
-            expected_content = expected.read().strip()
-            self.assertEqual(actual_content, expected_content)
+        self.harness.container_pebble_ready(self.container_name)
 
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
+        with open(EXPECTED_CONFIG_FILE_PATH) as expected_config_file:
+            expected_content = expected_config_file.read()
+        self.assertEqual((root / KEY_PATH).read_text(), PRIVATE_KEY.decode())
+        self.assertEqual((root / CERT_PATH).read_text(), STORED_CERTIFICATE)
+        self.assertEqual((root / CONFIG_PATH).read_text(), expected_content.strip())
+
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charm.generate_csr")
     @patch("charm.check_output")
+    @patch("charm.generate_private_key")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     def test_config_pushed_but_content_changed_when_pebble_ready_then_new_config_content_is_pushed(  # noqa: E501
-        self, patch_check_output, patch_get_assigned_certificates
+        self,
+        patch_nrf_url,
+        patch_generate_private_key,
+        patch_check_output,
+        patch_generate_csr,
+        patch_get_assigned_certificates,
     ):
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        certificate = "Whatever certificate content"
-        csr = "never gonna say goodbye"
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
-
+        patch_generate_private_key.return_value = PRIVATE_KEY
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_generate_csr.return_value = STORED_CSR
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
-        patch_get_assigned_certificates.return_value = [provider_certificate]
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
+        patch_get_assigned_certificates.return_value = [
+            provider_certificate,
+        ]
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-            model=Model(name="whatever"),
-        )
-        patch_check_output.return_value = "1.1.1.1".encode()
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("Dummy content")
 
-        with open(Path(config_dir.name) / "nssfcfg.conf", "w") as existing_config:
-            existing_config.write("never gonna give you up")
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_certificates_relation()
+        self._create_nrf_relation()
 
-        state_out = self.ctx.run(container.pebble_ready_event, state_in)
-        self.assertEqual(
-            state_out.unit_status,
-            ActiveStatus(),
-        )
-        with (
-            open(Path(config_dir.name) / "nssfcfg.conf") as actual,
-            open(Path(__file__).parent / "expected_config" / "config.conf") as expected,
-        ):
-            actual_content = actual.read()
-            expected_content = expected.read().strip()
-            self.assertEqual(actual_content, expected_content)
+        self.harness.container_pebble_ready("nssf")
 
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
+        with open(EXPECTED_CONFIG_FILE_PATH) as expected_config_file:
+            expected_content = expected_config_file.read()
+        self.assertEqual((root / KEY_PATH).read_text(), PRIVATE_KEY.decode())
+        self.assertEqual((root / CERT_PATH).read_text(), STORED_CERTIFICATE)
+        self.assertEqual((root / CONFIG_PATH).read_text(), expected_content.strip())
+
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
     @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_relations_available_and_config_pushed_when_pebble_ready_then_pebble_layer_is_added_correctly(  # noqa: E501
-        self, patch_check_output, patch_get_assigned_certificates
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        csr = "never gonna say goodbye"
-        certificate = "Whatever certificate content"
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
         patch_get_assigned_certificates.return_value = [provider_certificate]
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
-        patch_check_output.return_value = "1.1.1.1".encode()
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
 
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
-        state_out = self.ctx.run(container.pebble_ready_event, state_in)
+        self.harness.container_pebble_ready(self.container_name)
+        updated_plan = self.harness.get_container_pebble_plan(self.container_name).to_dict()
+        self.assertEqual(EXPECTED_PEBBLE_PLAN, updated_plan)
 
-        expected_plan = {
-            "services": {
-                "nssf": {
-                    "startup": "enabled",
-                    "override": "replace",
-                    "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
-                    "environment": {
-                        "GOTRACEBACK": "crash",
-                        "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
-                        "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
-                        "GRPC_TRACE": "all",
-                        "GRPC_VERBOSITY": "DEBUG",
-                        "POD_IP": "1.1.1.1",
-                        "MANAGED_BY_CONFIG_POD": "true",
-                    },
-                }
-            }
-        }
-        updated_plan = state_out.containers[0].layers["nssf"]
-        self.assertEqual(expected_plan, updated_plan)
-
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
     @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_relations_available_and_config_pushed_and_pebble_updated_when_pebble_ready_then_status_is_active(  # noqa: E501
-        self, patch_check_output, patch_get_assigned_certificates
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        csr = "never gonna say goodbye"
-        certificate = "Whatever certificate content"
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
         patch_get_assigned_certificates.return_value = [provider_certificate]
 
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
-        patch_check_output.return_value = "1.1.1.1".encode()
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / KEY_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
 
-        state_out = self.ctx.run(container.pebble_ready_event, state_in)
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
 
-        self.assertEqual(state_out.unit_status, ActiveStatus())
+        self.harness.container_pebble_ready(self.container_name)
+        self.assertEqual(self.harness.charm.unit.status, ActiveStatus())
 
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
     @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_given_ip_not_available_when_pebble_ready_then_status_is_waiting(
-        self, patch_check_output
+        self, _, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        config_dir = tempfile.TemporaryDirectory()
-        cert_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
         patch_check_output.return_value = "".encode()
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
 
-        state_out = self.ctx.run(container.pebble_ready_event, state_in)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR
+        patch_get_assigned_certificates.return_value = [provider_certificate]
 
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
+
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
+            self.harness.charm.unit.status,
             WaitingStatus("Waiting for pod IP address to be available"),
         )
 
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
-    @patch("ops.model.Container.restart")
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
     @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_relations_available_and_config_pushed_and_pebble_updated_when_pebble_ready_then_service_is_restarted(  # noqa: E501
-        self, patch_check_output, patch_restart, patch_get_assigned_certificates
+        self, patch_restart, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-
-        config_dir = tempfile.TemporaryDirectory()
-        cert_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        csr = "never gonna say goodbye"
-        certificate = "Whatever certificate content"
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
         patch_get_assigned_certificates.return_value = [provider_certificate]
 
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text("super different config file content")
 
-        with open(Path(cert_dir.name) / "nssf.pem", "w") as nssf_cert_file:
-            nssf_cert_file.write(certificate)
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
-        patch_check_output.return_value = "1.1.1.1".encode()
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
 
-        self.ctx.run(container.pebble_ready_event, state_in)
+        self.harness.container_pebble_ready(self.container_name)
+        self.assertEqual(self.harness.model.unit.status, ActiveStatus())
+        patch_restart.assert_called_with(self.container_name)
 
-        patch_restart.assert_called_with("nssf")
-
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
+    @patch("charm.generate_csr")
+    @patch("charm.generate_private_key")
     @patch("ops.model.Container.restart")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
     @patch("charm.check_output")
     def test_relations_available_and_config_pushed_and_pebble_layer_already_applied_when_pebble_ready_then_service_is_not_restarted(  # noqa: E501
-        self, patch_check_output, patch_restart, patch_get_assigned_certificates
+        self,
+        patch_check_output,
+        patch_get_assigned_certificates,
+        patch_nrf_url,
+        patch_restart,
+        patch_generate_private_key,
+        patch_generate_csr,
     ):
-        applied_plan = Layer(
-            {
-                "services": {
-                    "nssf": {
-                        "startup": "enabled",
-                        "override": "replace",
-                        "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
-                        "environment": {
-                            "GOTRACEBACK": "crash",
-                            "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
-                            "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
-                            "GRPC_TRACE": "all",
-                            "GRPC_VERBOSITY": "DEBUG",
-                            "POD_IP": "1.1.1.1",
-                            "MANAGED_BY_CONFIG_POD": "true",
-                        },
-                    }
-                }
-            }
-        )
-        cert_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount(
-                    "/free5gc/config/nssfcfg.conf",
-                    Path(__file__).parent / "expected_config" / "config.conf",
-                ),
-            },
-            layers={"nssf": applied_plan},
-        )
-        csr = "never gonna say goodbye"
-        certificate = "Whatever certificate content"
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
+        patch_generate_private_key.return_value = PRIVATE_KEY
+        patch_generate_csr.return_value = STORED_CSR
+
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR
         patch_get_assigned_certificates.return_value = [provider_certificate]
 
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text(self._read_file(EXPECTED_CONFIG_FILE_PATH))
 
-        with open(Path(cert_dir.name) / "nssf.pem", "w") as nssf_cert_file:
-            nssf_cert_file.write(certificate)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        self._create_nrf_relation()
+        self._create_certificates_relation()
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
-        patch_check_output.return_value = "1.1.1.1".encode()
-
-        self.ctx.run(container.pebble_ready_event, state_in)
-
+        self.harness.container_pebble_ready(self.container_name)
         patch_restart.assert_not_called()
 
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
-    @patch("ops.model.Container.restart")
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
     @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("ops.model.Container.restart")
     def test_config_pushed_but_content_changed_and_layer_already_applied_when_pebble_ready_then_nssf_service_is_restarted(  # noqa: E501
-        self, patch_check_output, patch_restart, patch_get_assigned_certificates
+        self, patch_restart, patch_nrf_url, patch_check_output, patch_get_assigned_certificates
     ):
-        config_dir = tempfile.TemporaryDirectory()
-        cert_dir = tempfile.TemporaryDirectory()
-        applied_plan = Layer(
-            {
-                "services": {
-                    "nssf": {
-                        "startup": "enabled",
-                        "override": "replace",
-                        "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
-                        "environment": {
-                            "GOTRACEBACK": "crash",
-                            "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
-                            "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
-                            "GRPC_TRACE": "all",
-                            "GRPC_VERBOSITY": "DEBUG",
-                            "POD_IP": "1.1.1.1",
-                            "MANAGED_BY_CONFIG_POD": "true",
-                        },
-                    }
-                }
-            }
-        )
-        csr = "never gonna make you cry"
-        container = self.container.replace(
-            mounts={
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-            },
-            layers={"nssf": applied_plan},
-        )
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
-
-        certificate = "Whatever certificate content"
-
-        with open(Path(cert_dir.name) / "nssf.pem", "w") as nssf_cert_file:
-            nssf_cert_file.write(certificate)
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
         patch_get_assigned_certificates.return_value = [provider_certificate]
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-            model=Model(name="whatever"),
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
+        (root / CONFIG_PATH).write_text(self._read_file(EXPECTED_CONFIG_FILE_PATH))
+
+        patch_check_output.return_value = b"1.2.3.4"
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
+        self.harness.container_pebble_ready(self.container_name)
+        self.assertEqual(self.harness.model.unit.status, ActiveStatus(""))
+        patch_restart.assert_called_once_with(self.container_name)
+
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    def test_given_cannot_connect_to_container_when_nrf_available_then_status_is_waiting(
+        self, patch_nrf_url
+    ):
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
+        patch_nrf_url.return_value = VALID_NRF_URL
+        self._create_certificates_relation()
+        self._create_nrf_relation()
+        self.assertEqual(
+            self.harness.model.unit.status,
+            WaitingStatus("Waiting for container to start"),
         )
-        patch_check_output.return_value = "1.1.1.1".encode()
-
-        self.ctx.run(container.pebble_ready_event, state_in)
-
-        patch_restart.assert_called_with("nssf")
-
-    def test_given_cannot_connect_to_container_when_nrf_available_then_status_is_waiting(self):
-        container = self.container.replace(can_connect=False)
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation],
-        )
-
-        state_out = self.ctx.run(self.nrf_relation.changed_event, state_in)
-
-        self.assertEqual(state_out.unit_status, WaitingStatus("Waiting for container to start"))
 
     def test_given_cannot_connect_to_container_when_certificates_relation_changed_then_status_is_waiting(  # noqa: E501
         self,
     ):
-        container = self.container.replace(can_connect=False)
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
+        self.assertEqual(
+            self.harness.model.unit.status,
+            WaitingStatus("Waiting for container to start"),
         )
 
-        state_out = self.ctx.run(self.tls_relation.joined_event, state_in)
-
-        self.assertEqual(state_out.unit_status, WaitingStatus("Waiting for container to start"))
-
-    @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("charm.generate_csr")
     @patch("charm.generate_private_key")
+    @patch("charm.check_output")
     def test_given_can_connect_and_private_key_doesnt_exist_when_certificates_relation_joined_then_private_key_is_generated(  # noqa: E501
-        self, patch_generate_private_key, patch_check_output
+        self, patch_check_output, patch_generate_private_key, patch_generate_csr, patched_nrf_url
     ):
-        patch_check_output.return_value = "1.1.1.1".encode()
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        private_key = b"private key content"
-        patch_generate_private_key.return_value = private_key
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write("some csr")
+        self.harness.add_storage(storage_name="config", attach=True)
+        self.harness.add_storage(storage_name="certs", attach=True)
+        root = self.harness.get_filesystem_root(self.container_name)
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        patch_generate_private_key.return_value = PRIVATE_KEY
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patch_generate_csr.return_value = STORED_CSR
+        patched_nrf_url.return_value = VALID_NRF_URL
 
-        self.ctx.run(self.tls_relation.joined_event, state_in)
+        self._create_nrf_relation()
+        self._create_certificates_relation()
 
-        with open(Path(cert_dir.name) / "nssf.key") as nssf_key_file:
-            actual_content = nssf_key_file.read()
-            self.assertEqual(actual_content, private_key.decode())
+        self.harness.container_pebble_ready(self.container_name)
 
-    @patch("charm.check_output")
-    @patch("ops.model.Container.remove_path")
-    @patch("ops.model.Container.exists")
+        self.assertEqual((root / KEY_PATH).read_text(), PRIVATE_KEY.decode())
+
     def test_given_certificates_are_stored_when_on_certificates_relation_broken_then_certificates_are_removed(  # noqa: E501
-        self, patch_exists, patch_remove_path, patch_check_output
+        self,
     ):
-        patch_check_output.return_value = "1.1.1.1".encode()
-        patch_exists.return_value = True
-        state_in = State(
-            leader=True,
-            containers=[self.container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        self.harness.add_storage(storage_name="certs", attach=True)
 
-        self.ctx.run(self.tls_relation.broken_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / KEY_PATH).write_text(PRIVATE_KEY.decode())
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
 
-        patch_remove_path.assert_any_call(path="/support/TLS/nssf.pem")
-        patch_remove_path.assert_any_call(path="/support/TLS/nssf.key")
-        patch_remove_path.assert_any_call(path="/support/TLS/nssf.csr")
+        self.harness.charm._on_certificates_relation_broken(event=Mock)
 
-    @patch(
-        f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
-        new=Mock,
-    )
-    @patch("charm.check_output")
+        with self.assertRaises(FileNotFoundError):
+            (root / CERT_PATH).read_text()
+        with self.assertRaises(FileNotFoundError):
+            (root / KEY_PATH).read_text()
+        with self.assertRaises(FileNotFoundError):
+            (root / CSR_PATH).read_text()
+
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     @patch("charm.generate_csr")
+    @patch("charm.check_output")
     def test_given_private_key_exists_when_on_certificates_relation_joined_then_csr_is_generated(
-        self, patch_generate_csr, patch_check_output
+        self, patch_check_output, patch_generate_csr, patched_nrf_url
     ):
-        patch_check_output.return_value = "1.1.1.1".encode()
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        with open(Path(cert_dir.name) / "nssf.key", "w") as nssf_key_file:
-            nssf_key_file.write("never gonna let you down")
-        csr = b"whatever csr content"
-        patch_generate_csr.return_value = csr
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
-        self.ctx.run(self.tls_relation.joined_event, state_in)
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / KEY_PATH).write_text(PRIVATE_KEY.decode())
 
-        with open(Path(cert_dir.name) / "nssf.csr") as nssf_csr_file:
-            actual_content = nssf_csr_file.read()
-            self.assertEqual(actual_content, csr.decode())
+        patch_generate_csr.return_value = STORED_CSR
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patched_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
+        self.assertEqual((root / CSR_PATH).read_text(), STORED_CSR.decode())
 
     @patch(
-        f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
+        f"{CERTIFICATES_LIB}.request_certificate_creation",
     )
-    @patch("charm.check_output")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     @patch("charm.generate_csr")
+    @patch("charm.check_output")
     def test_given_private_key_exists_and_certificate_not_yet_requested_when_on_certificates_relation_joined_then_cert_is_requested(  # noqa: E501
         self,
-        patch_generate_csr,
         patch_check_output,
+        patch_generate_csr,
+        patched_nrf_url,
         patch_request_certificate_creation,
     ):
-        patch_check_output.return_value = "1.1.1.1".encode()
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / KEY_PATH).write_text(PRIVATE_KEY.decode())
+
+        patch_generate_csr.return_value = STORED_CSR
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patched_nrf_url.return_value = VALID_NRF_URL
+
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
+        patch_request_certificate_creation.assert_called_with(
+            certificate_signing_request=STORED_CSR
         )
-        with open(Path(cert_dir.name) / "nssf.key", "w") as nssf_key_file:
-            nssf_key_file.write("never gonna run around and desert you")
-        csr = b"whatever csr content"
-        patch_generate_csr.return_value = csr
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
 
-        self.ctx.run(self.tls_relation.joined_event, state_in)
-
-        patch_request_certificate_creation.assert_called_with(certificate_signing_request=csr)
-
-    @patch(
-        f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.request_certificate_creation",  # noqa: E501
-    )
+    @patch(f"{CERTIFICATES_LIB}.request_certificate_creation")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     @patch("charm.check_output")
     def test_given_certificate_already_requested_when_on_certificates_relation_joined_then_cert_is_not_requested(  # noqa: E501
-        self,
-        patch_check_output,
-        patch_request_certificate_creation,
+        self, patch_check_output, patched_nrf_url, patch_request_certificate_creation
     ):
-        patch_check_output.return_value = "1.1.1.1".encode()
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        with open(Path(cert_dir.name) / "nssf.key", "w") as nssf_key_file:
-            nssf_key_file.write("never gonna run around and desert you")
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write("whatever csr content")
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, self.tls_relation],
-        )
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / KEY_PATH).write_text(PRIVATE_KEY.decode())
+        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
 
-        self.ctx.run(self.tls_relation.joined_event, state_in)
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patched_nrf_url.return_value = VALID_NRF_URL
+        self._create_certificates_relation()
 
         patch_request_certificate_creation.assert_not_called()
 
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     @patch("charm.check_output")
     def test_given_csr_matches_stored_one_when_certificate_available_then_certificate_is_pushed(
-        self, patch_check_output, patch_get_assigned_certificates
+        self, patch_check_output, patched_nrf_url, patch_get_assigned_certificates
     ):
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        patch_check_output.return_value = b"1.2.3.4"
-        csr = "never gonna make you cry"
-        certificate = "Whatever certificate content"
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / KEY_PATH).write_text(PRIVATE_KEY.decode())
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patched_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
         provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = certificate
-        provider_certificate.csr = csr
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = STORED_CSR.decode()
         patch_get_assigned_certificates.return_value = [provider_certificate]
 
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(csr)
+        self.harness.container_pebble_ready(self.container_name)
 
-        tls_relation = Relation(
-            endpoint="certificates",
-            remote_app_name="tls-provider",
-            local_unit_data={
-                "certificate_signing_requests": json.dumps([{"certificate_signing_request": csr}])
-            },
-            remote_app_data={
-                "certificates": json.dumps(
-                    [
-                        {
-                            "certificate": certificate,
-                            "certificate_signing_request": csr,
-                            "ca": "abc",
-                            "chain": ["abc", "def"],
-                        }
-                    ]
-                )
-            },
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, tls_relation],
-        )
+        self.assertEqual((root / CERT_PATH).read_text(), STORED_CERTIFICATE)
 
-        self.ctx.run(tls_relation.changed_event, state_in)
-
-        with open(Path(cert_dir.name) / "nssf.pem") as nssf_pem_file:
-            actual_content = nssf_pem_file.read()
-            self.assertEqual(actual_content, certificate)
-
-    @patch(f"{CERTIFICATES_LIB_PATH}.TLSCertificatesRequiresV3.get_assigned_certificates")
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
     @patch("charm.check_output")
-    def test_given_csr_doesnt_match_stored_one_when_certificate_available_then_status_is_waiting(  # noqa: E501
-        self, patch_check_output, patch_get_assigned_certificates
+    def test_given_csr_doesnt_match_stored_one_when_certificate_available_then_status_is_waiting(
+        self, patch_check_output, patched_nrf_url, patch_get_assigned_certificates
     ):
-        patch_check_output.return_value = b"1.2.3.4"
-        stored_csr = "never gonna say goodbye"
-        cert_dir = tempfile.TemporaryDirectory()
-        config_dir = tempfile.TemporaryDirectory()
-        container = self.container.replace(
-            mounts={
-                "cert_dir": Mount("/support/TLS", cert_dir.name),
-                "config_dir": Mount("/free5gc/config", config_dir.name),
-            },
-        )
-        with open(Path(cert_dir.name) / "nssf.csr", "w") as nssf_csr_file:
-            nssf_csr_file.write(stored_csr)
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
 
-        relation_csr = "CSR in relation data (different from stored)"
-        certificate = "Whatever certificate content"
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / KEY_PATH).write_text(PRIVATE_KEY.decode())
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
 
-        tls_relation = Relation(
-            endpoint="certificates",
-            remote_app_name="tls-provider",
-            local_unit_data={
-                "certificate_signing_requests": json.dumps(
-                    [{"certificate_signing_request": relation_csr}]
-                )
-            },
-            remote_app_data={
-                "certificates": json.dumps(
-                    [
-                        {
-                            "certificate": certificate,
-                            "certificate_signing_request": relation_csr,
-                            "ca": "abc",
-                            "chain": ["abc", "def"],
-                        }
-                    ]
-                )
-            },
-        )
-        state_in = State(
-            leader=True,
-            containers=[container],
-            relations=[self.nrf_relation, tls_relation],
-        )
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patched_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
 
-        state_out = self.ctx.run(tls_relation.changed_event, state_in)
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = "Relation CSR content (different from stored one)"
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
+        self.harness.container_pebble_ready(self.container_name)
         self.assertEqual(
-            state_out.unit_status,
+            self.harness.model.unit.status,
             WaitingStatus("Waiting for certificates to be stored"),
         )
 
-        with pytest.raises(FileNotFoundError):
-            open(Path(cert_dir.name) / "nssf.pem")
+    @patch(f"{CERTIFICATES_LIB}.get_assigned_certificates")
+    @patch("charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock)
+    @patch("charm.check_output")
+    def test_given_csr_doesnt_match_stored_one_when_certificate_available_then_cert_is_not_pushed(
+        self, patch_check_output, patched_nrf_url, patch_get_assigned_certificates
+    ):
+        self.harness.add_storage(storage_name="certs", attach=True)
+        self.harness.add_storage(storage_name="config", attach=True)
+
+        root = self.harness.get_filesystem_root(self.container_name)
+        (root / KEY_PATH).write_text(PRIVATE_KEY.decode())
+        (root / CSR_PATH).write_text(STORED_CSR.decode())
+
+        patch_check_output.return_value = POD_IP
+        self.harness.set_can_connect(container=self.container_name, val=True)
+        patched_nrf_url.return_value = VALID_NRF_URL
+        self._create_nrf_relation()
+        self._create_certificates_relation()
+
+        provider_certificate = Mock(ProviderCertificate)
+        provider_certificate.certificate = STORED_CERTIFICATE
+        provider_certificate.csr = "Relation CSR content (different from stored one)"
+        patch_get_assigned_certificates.return_value = [provider_certificate]
+
+        self.harness.container_pebble_ready(self.container_name)
+
+        with self.assertRaises(FileNotFoundError):
+            (root / CERT_PATH).read_text()
