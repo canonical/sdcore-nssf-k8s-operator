@@ -18,9 +18,16 @@ from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ign
     generate_private_key,
 )
 from jinja2 import Environment, FileSystemLoader
+from ops import (
+    ActiveStatus,
+    BlockedStatus,
+    CollectStatusEvent,
+    ModelError,
+    RelationBrokenEvent,
+    WaitingStatus,
+)
 from ops.charm import CharmBase, EventBase
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Layer, PathError
 
 logger = logging.getLogger(__name__)
@@ -45,13 +52,13 @@ class NSSFOperatorCharm(CharmBase):
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_unit_status)
         if not self.unit.is_leader():
             # NOTE: In cases where leader status is lost before the charm is
             # finished processing all teardown events, this prevents teardown
             # event code from running. Luckily, for this charm, none of the
-            # teardown code is necessary to preform if we're removing the
+            # teardown code is necessary to perform if we're removing the
             # charm.
-            self.unit.status = BlockedStatus("Scaling is not implemented for this charm")
             return
         self._container_name = self._service_name = "nssf"
         self._container = self.unit.get_container(self._container_name)
@@ -64,7 +71,6 @@ class NSSFOperatorCharm(CharmBase):
         self.framework.observe(self.on.nssf_pebble_ready, self._configure_nssf)
         self.framework.observe(self.on.fiveg_nrf_relation_joined, self._configure_nssf)
         self.framework.observe(self._nrf_requires.on.nrf_available, self._configure_nssf)
-        self.framework.observe(self._nrf_requires.on.nrf_broken, self._on_nrf_broken)
         self.framework.observe(self.on.certificates_relation_joined, self._configure_nssf)
         self.framework.observe(
             self.on.certificates_relation_broken, self._on_certificates_relation_broken
@@ -74,63 +80,218 @@ class NSSFOperatorCharm(CharmBase):
             self._certificates.on.certificate_expiring, self._on_certificate_expiring
         )
 
+    def _on_collect_unit_status(self, event: CollectStatusEvent):  # noqa C901
+        """Check the unit status and set to Unit when CollectStatusEvent is fired.
+
+        Args:
+            event: CollectStatusEvent
+        """
+        if not self.unit.is_leader():
+            # NOTE: In cases where leader status is lost before the charm is
+            # finished processing all teardown events, this prevents teardown
+            # event code from running. Luckily, for this charm, none of the
+            # teardown code is necessary to perform if we're removing the
+            # charm.
+            event.add_status(BlockedStatus("Scaling is not implemented for this charm"))
+            logger.info("Scaling is not implemented for this charm")
+            return
+
+        if not self._container.can_connect():
+            event.add_status(WaitingStatus("Waiting for container to start"))
+            logger.info("Waiting for container to start")
+            return
+
+        if invalid_configs := self._get_invalid_configs():
+            event.add_status(
+                BlockedStatus(f"The following configurations are not valid: {invalid_configs}")
+            )
+            logger.info("The following configurations are not valid: %s", invalid_configs)
+            return
+
+        for relation in ["fiveg_nrf", "certificates"]:
+            if not self.model.relations[relation]:
+                event.add_status(BlockedStatus(f"Waiting for {relation} relation"))
+                logger.info("Waiting for %s relation", relation)
+                return
+
+        if not self._nrf_data_is_available:
+            event.add_status(WaitingStatus("Waiting for NRF data to be available"))
+            logger.info("Waiting for NRF data to be available")
+            return
+
+        if not self._container.exists(path=CONFIG_DIR) or not self._container.exists(
+            path=CERTS_DIR_PATH
+        ):
+            event.add_status(WaitingStatus("Waiting for storage to be attached"))
+            logger.info("Waiting for storage to be attached")
+            return
+
+        if not _get_pod_ip():
+            event.add_status(WaitingStatus("Waiting for pod IP address to be available"))
+            logger.info("Waiting for pod IP address to be available")
+            return
+
+        if self._csr_is_stored() and not self._get_current_provider_certificate():
+            event.add_status(WaitingStatus("Waiting for certificates to be stored"))
+            logger.info("Waiting for certificates to be stored")
+            return
+
+        if not self._nssf_service_is_running():
+            event.add_status(WaitingStatus("Waiting for NSSF service to start"))
+            logger.info("Waiting for NSSF service to start")
+            return
+
+        event.add_status(ActiveStatus())
+
+    def _ready_to_configure(self) -> bool:
+        """Returns whether the preconditions are met to proceed with the configuration.
+
+        Returns:
+            ready_to_configure: True if all conditions are met else False
+        """
+        if not self._container.can_connect():
+            return False
+
+        if self._get_invalid_configs():
+            return False
+
+        for relation in ["fiveg_nrf", "certificates"]:
+            if not self._relation_created(relation):
+                return False
+
+        if not self._nrf_data_is_available:
+            return False
+
+        if not self._storage_is_attached():
+            return False
+
+        if not _get_pod_ip():
+            return False
+
+        return True
+
+    def _storage_is_attached(self) -> bool:
+        """Returns whether storage is attached to the workload container.
+
+        Returns:
+            bool: Whether storage is attached.
+        """
+        return self._container.exists(path=CONFIG_DIR) and self._container.exists(
+            path=CERTS_DIR_PATH
+        )
+
+    def _nssf_service_is_running(self) -> bool:
+        """Check if the NSSF service is running.
+
+        Returns:
+            bool: Whether the NSSF service is running.
+        """
+        if not self._container.can_connect():
+            return False
+        try:
+            service = self._container.get_service(self._service_name)
+        except ModelError:
+            return False
+        return service.is_running()
+
     def _configure_nssf(self, event: EventBase) -> None:  # noqa: C901
         """Configure NSSF configuration file and pebble service.
 
         Args:
             event (EventBase): Juju event
         """
-        if not self._container.can_connect():
-            self.unit.status = WaitingStatus("Waiting for container to start")
-            return
-        if invalid_configs := self._get_invalid_configs():
-            self.unit.status = BlockedStatus(
-                f"The following configurations are not valid: {invalid_configs}"
-            )
-            return
-        for relation in ["fiveg_nrf", "certificates"]:
-            if not self._relation_created(relation):
-                self.unit.status = BlockedStatus(f"Waiting for {relation} relation")
-                return
-        if not self._nrf_data_is_available:
-            self.unit.status = WaitingStatus("Waiting for NRF data to be available")
-            return
-        if not self._container.exists(path=CONFIG_DIR) or not self._container.exists(
-            path=CERTS_DIR_PATH
-        ):
-            self.unit.status = WaitingStatus("Waiting for storage to be attached")
-            return
-        if not _get_pod_ip():
-            self.unit.status = WaitingStatus("Waiting for pod IP address to be available")
+        if not self._ready_to_configure():
+            logger.info("The preconditions for the configuration are not met yet.")
             return
 
         if not self._private_key_is_stored():
             self._generate_private_key()
+
         if not self._csr_is_stored():
             self._request_new_certificate()
 
         provider_certificate = self._get_current_provider_certificate()
         if not provider_certificate:
-            self.unit.status = WaitingStatus("Waiting for certificates to be stored")
             return
 
-        certificate_was_updated = self._update_certificate(
-            provider_certificate=provider_certificate
-        )
-        config_file_changed = self._apply_nssf_config()
-        should_restart = config_file_changed or certificate_was_updated
-        self._configure_nssf_service(force_restart=should_restart)
-        self.unit.status = ActiveStatus()
+        if certificate_update_required := self._is_certificate_update_required(
+            provider_certificate
+        ):
+            self._store_certificate(certificate=provider_certificate)
 
-    def _on_nrf_broken(self, event: EventBase) -> None:
-        """Event handler for NRF relation broken.
+        desired_config_file = self._generate_nssf_config_file()
+        if config_update_required := self._is_config_update_required(desired_config_file):
+            self._push_config_file(content=desired_config_file)
+
+        should_restart = config_update_required or certificate_update_required
+        self._configure_pebble(restart=should_restart)
+
+    def _is_config_update_required(self, content: str) -> bool:
+        """Decides whether config update is required by checking existence and config content.
 
         Args:
-            event (NRFBrokenEvent): Juju event
-        """
-        self.unit.status = BlockedStatus("Waiting for fiveg_nrf relation")
+            content (str): desired config file content
 
-    def _on_certificates_relation_broken(self, event: EventBase) -> None:
+        Returns:
+            True if config update is required else False
+        """
+        return not self._config_file_is_written() or not self._config_file_content_matches(
+            content=content
+        )
+
+    def _config_file_is_written(self) -> bool:
+        """Returns whether the config file was written to the workload container.
+
+        Returns:
+            bool: Whether the config file was written.
+        """
+        return bool(self._container.exists(f"{CONFIG_DIR}/{CONFIG_FILE_NAME}"))
+
+    def _configure_pebble(self, restart: bool = False) -> None:
+        """Configure the Pebble layer.
+
+        Args:
+            restart (bool): Whether to restart the Pebble service. Defaults to False.
+        """
+        self._container.add_layer(self._container_name, self._pebble_layer, combine=True)
+        if restart:
+            self._container.restart(self._service_name)
+            logger.info("Restarted container %s", self._service_name)
+            return
+        self._container.replan()
+
+    def _is_certificate_update_required(self, provider_certificate) -> bool:
+        """Checks the provided certificate and existing certificate.
+
+        Returns True if update is required.
+
+        Args:
+            provider_certificate: str
+        Returns:
+            True if update is required else False
+        """
+        return self._get_existing_certificate() != provider_certificate
+
+    def _get_existing_certificate(self) -> str:
+        """Returns the existing certificate if present else empty string."""
+        return self._get_stored_certificate() if self._certificate_is_stored() else ""
+
+    def _generate_nssf_config_file(self) -> str:
+        """Handles creation of the NSSF config file based on a given template.
+
+        Returns:
+            content (str): desired config file content
+        """
+        return self._render_config_file(
+            sbi_port=SBI_PORT,
+            nrf_url=self._nrf_requires.nrf_url,
+            nssf_ip=_get_pod_ip(),  # type: ignore[arg-type]
+            sst=self._get_sst_config(),  # type: ignore[arg-type]
+            sd=self._get_sd_config(),  # type: ignore[arg-type]
+            scheme="https",
+        )
+
+    def _on_certificates_relation_broken(self, event: RelationBrokenEvent) -> None:
         """Deletes TLS related artifacts and reconfigures workload."""
         if not self._container.can_connect():
             event.defer()
@@ -138,7 +299,6 @@ class NSSFOperatorCharm(CharmBase):
         self._delete_private_key()
         self._delete_csr()
         self._delete_certificate()
-        self.unit.status = BlockedStatus("Waiting for certificates relation")
 
     def _get_current_provider_certificate(self) -> str | None:
         """Compares the current certificate request to what is in the interface.
