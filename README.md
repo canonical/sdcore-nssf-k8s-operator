@@ -17,4 +17,4 @@ juju integrate sdcore-nssf-k8s:certificates self-signed-certificates:certificate
 
 ## Image
 
-- **nssf**: `ghcr.io/canonical/sdcore-nssf:1.3`
+- **nssf**: `ghcr.io/canonical/sdcore-nssf:1.4.0`
