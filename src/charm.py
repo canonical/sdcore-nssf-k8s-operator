@@ -7,7 +7,7 @@
 import logging
 from ipaddress import IPv4Address
 from subprocess import check_output
-from typing import Optional
+from typing import Optional, cast
 
 from charms.loki_k8s.v1.loki_push_api import LogForwarder  # type: ignore[import]
 from charms.sdcore_nrf_k8s.v0.fiveg_nrf import NRFRequires  # type: ignore[import]
@@ -576,7 +576,7 @@ class NSSFOperatorCharm(CharmBase):
         }
 
     def _get_sd_config(self) -> Optional[str]:
-        return self.model.config.get("sd")
+        return cast(Optional[str], self.model.config.get("sd"))
 
     def _get_sst_config(self) -> Optional[int]:
         return int(self.model.config.get("sst"))  # type: ignore[arg-type]
