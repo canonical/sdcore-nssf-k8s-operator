@@ -5,13 +5,12 @@ import unittest
 from unittest.mock import Mock, PropertyMock, patch
 
 import yaml
+from charm import CONFIG_FILE_NAME, NRF_RELATION_NAME, TLS_RELATION_NAME, NSSFOperatorCharm
 from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
     ProviderCertificate,
 )
 from ops import testing
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
-
-from charm import CONFIG_FILE_NAME, NRF_RELATION_NAME, TLS_RELATION_NAME, NSSFOperatorCharm
 
 POD_IP = b"1.1.1.1"
 PRIVATE_KEY = b"whatever key content"
@@ -60,7 +59,7 @@ class TestCharm(unittest.TestCase):
 
     @staticmethod
     def _get_metadata() -> dict:
-        """Reads `metadata.yaml` and returns it as a dictionary.
+        """Read `metadata.yaml` and returns it as a dictionary.
 
         Returns:
             dics: metadata.yaml as a dictionary.
@@ -71,7 +70,7 @@ class TestCharm(unittest.TestCase):
 
     @staticmethod
     def _read_file(path: str) -> str:
-        """Reads a file and returns as a string.
+        """Read a file and returns as a string.
 
         Args:
             path (str): path to the file.
@@ -84,7 +83,7 @@ class TestCharm(unittest.TestCase):
         return content
 
     def _create_nrf_relation(self) -> int:
-        """Creates NRF relation.
+        """Create NRF relation.
 
         Returns:
             int: relation id.
@@ -96,7 +95,7 @@ class TestCharm(unittest.TestCase):
         return relation_id
 
     def _create_certificates_relation(self) -> int:
-        """Creates certificates relation.
+        """Create certificates relation.
 
         Returns:
             int: relation id.
