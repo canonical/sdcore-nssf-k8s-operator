@@ -144,7 +144,7 @@ class NSSFOperatorCharm(CharmBase):
         event.add_status(ActiveStatus())
 
     def _ready_to_configure(self) -> bool:
-        """Returns whether the preconditions are met to proceed with the configuration.
+        """Return whether the preconditions are met to proceed with the configuration.
 
         Returns:
             ready_to_configure: True if all conditions are met else False
@@ -171,7 +171,7 @@ class NSSFOperatorCharm(CharmBase):
         return True
 
     def _storage_is_attached(self) -> bool:
-        """Returns whether storage is attached to the workload container.
+        """Return whether storage is attached to the workload container.
 
         Returns:
             bool: Whether storage is attached.
@@ -227,7 +227,7 @@ class NSSFOperatorCharm(CharmBase):
         self._configure_pebble(restart=should_restart)
 
     def _is_config_update_required(self, content: str) -> bool:
-        """Decides whether config update is required by checking existence and config content.
+        """Decide whether config update is required by checking existence and config content.
 
         Args:
             content (str): desired config file content
@@ -240,7 +240,7 @@ class NSSFOperatorCharm(CharmBase):
         )
 
     def _config_file_is_written(self) -> bool:
-        """Returns whether the config file was written to the workload container.
+        """Return whether the config file was written to the workload container.
 
         Returns:
             bool: Whether the config file was written.
@@ -261,7 +261,7 @@ class NSSFOperatorCharm(CharmBase):
         self._container.replan()
 
     def _is_certificate_update_required(self, provider_certificate) -> bool:
-        """Checks the provided certificate and existing certificate.
+        """Check the provided certificate and existing certificate.
 
         Returns True if update is required.
 
@@ -273,11 +273,11 @@ class NSSFOperatorCharm(CharmBase):
         return self._get_existing_certificate() != provider_certificate
 
     def _get_existing_certificate(self) -> str:
-        """Returns the existing certificate if present else empty string."""
+        """Return the existing certificate if present else empty string."""
         return self._get_stored_certificate() if self._certificate_is_stored() else ""
 
     def _generate_nssf_config_file(self) -> str:
-        """Handles creation of the NSSF config file based on a given template.
+        """Handle creation of the NSSF config file based on a given template.
 
         Returns:
             content (str): desired config file content
@@ -292,7 +292,7 @@ class NSSFOperatorCharm(CharmBase):
         )
 
     def _on_certificates_relation_broken(self, event: RelationBrokenEvent) -> None:
-        """Deletes TLS related artifacts and reconfigures workload."""
+        """Delete TLS related artifacts and reconfigures workload."""
         if not self._container.can_connect():
             event.defer()
             return
@@ -301,7 +301,7 @@ class NSSFOperatorCharm(CharmBase):
         self._delete_certificate()
 
     def _get_current_provider_certificate(self) -> str | None:
-        """Compares the current certificate request to what is in the interface.
+        """Compare the current certificate request to what is in the interface.
 
         Returns The current valid provider certificate if present
         """
@@ -312,7 +312,7 @@ class NSSFOperatorCharm(CharmBase):
         return None
 
     def _update_certificate(self, provider_certificate) -> bool:
-        """Compares the provided certificate to what is stored.
+        """Compare the provided certificate to what is stored.
 
         Returns True if the certificate was updated
         """
@@ -326,7 +326,7 @@ class NSSFOperatorCharm(CharmBase):
         return False
 
     def _on_certificate_expiring(self, event: CertificateExpiringEvent) -> None:
-        """Requests new certificate."""
+        """Request new certificate."""
         if not self._container.can_connect():
             event.defer()
             return
@@ -336,12 +336,12 @@ class NSSFOperatorCharm(CharmBase):
         self._request_new_certificate()
 
     def _generate_private_key(self) -> None:
-        """Generates and stores private key."""
+        """Generate and stores private key."""
         private_key = generate_private_key()
         self._store_private_key(private_key)
 
     def _request_new_certificate(self) -> None:
-        """Generates and stores CSR, and uses it to request a new certificate."""
+        """Generate and stores CSR, and uses it to request a new certificate."""
         private_key = self._get_stored_private_key()
         csr = generate_csr(
             private_key=private_key,
@@ -352,59 +352,59 @@ class NSSFOperatorCharm(CharmBase):
         self._certificates.request_certificate_creation(certificate_signing_request=csr)
 
     def _delete_private_key(self) -> None:
-        """Removes private key from workload."""
+        """Remove private key from workload."""
         if not self._private_key_is_stored():
             return
         self._container.remove_path(path=f"{CERTS_DIR_PATH}/{PRIVATE_KEY_NAME}")
         logger.info("Removed private key from workload")
 
     def _delete_csr(self) -> None:
-        """Deletes CSR from workload."""
+        """Delete CSR from workload."""
         if not self._csr_is_stored():
             return
         self._container.remove_path(path=f"{CERTS_DIR_PATH}/{CSR_NAME}")
         logger.info("Removed CSR from workload")
 
     def _delete_certificate(self) -> None:
-        """Deletes certificate from workload."""
+        """Delete certificate from workload."""
         if not self._certificate_is_stored():
             return
         self._container.remove_path(path=f"{CERTS_DIR_PATH}/{CERTIFICATE_NAME}")
         logger.info("Removed certificate from workload")
 
     def _private_key_is_stored(self) -> bool:
-        """Returns whether private key is stored in workload."""
+        """Return whether private key is stored in workload."""
         return self._container.exists(path=f"{CERTS_DIR_PATH}/{PRIVATE_KEY_NAME}")
 
     def _csr_is_stored(self) -> bool:
-        """Returns whether CSR is stored in workload."""
+        """Return whether CSR is stored in workload."""
         return self._container.exists(path=f"{CERTS_DIR_PATH}/{CSR_NAME}")
 
     def _get_stored_certificate(self) -> str:
-        """Returns stored certificate."""
+        """Return stored certificate."""
         return str(self._container.pull(path=f"{CERTS_DIR_PATH}/{CERTIFICATE_NAME}").read())
 
     def _get_stored_csr(self) -> str:
-        """Returns stored CSR."""
+        """Return stored CSR."""
         return str(self._container.pull(path=f"{CERTS_DIR_PATH}/{CSR_NAME}").read())
 
     def _get_stored_private_key(self) -> bytes:
-        """Returns stored private key."""
+        """Return stored private key."""
         return str(
             self._container.pull(path=f"{CERTS_DIR_PATH}/{PRIVATE_KEY_NAME}").read()
         ).encode()
 
     def _certificate_is_stored(self) -> bool:
-        """Returns whether certificate is stored in workload."""
+        """Return whether certificate is stored in workload."""
         return self._container.exists(path=f"{CERTS_DIR_PATH}/{CERTIFICATE_NAME}")
 
     def _store_certificate(self, certificate: str) -> None:
-        """Stores certificate in workload."""
+        """Store certificate in workload."""
         self._container.push(path=f"{CERTS_DIR_PATH}/{CERTIFICATE_NAME}", source=certificate)
         logger.info("Pushed certificate pushed to workload")
 
     def _store_private_key(self, private_key: bytes) -> None:
-        """Stores private key in workload."""
+        """Store private key in workload."""
         self._container.push(
             path=f"{CERTS_DIR_PATH}/{PRIVATE_KEY_NAME}",
             source=private_key.decode(),
@@ -412,12 +412,12 @@ class NSSFOperatorCharm(CharmBase):
         logger.info("Pushed private key to workload")
 
     def _store_csr(self, csr: bytes) -> None:
-        """Stores CSR in workload."""
+        """Store CSR in workload."""
         self._container.push(path=f"{CERTS_DIR_PATH}/{CSR_NAME}", source=csr.decode().strip())
         logger.info("Pushed CSR to workload")
 
     def _get_invalid_configs(self) -> list[str]:
-        """Returns list of invalid configurations.
+        """Return list of invalid configurations.
 
         Returns:
             list: List of strings matching config keys.
@@ -592,7 +592,7 @@ class NSSFOperatorCharm(CharmBase):
 
 
 def _get_pod_ip() -> Optional[str]:
-    """Returns the pod IP using juju client.
+    """Return the pod IP using juju client.
 
     Returns:
         str: The pod IP.
