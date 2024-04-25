@@ -19,9 +19,13 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 APP_NAME = METADATA["name"]
 
 DB_APPLICATION_NAME = "mongodb-k8s"
+DB_APPLICATION_CHANNEL = "6/beta"
 NRF_APPLICATION_NAME = "sdcore-nrf-k8s"
+NRF_APPLICATION_CHANNEL = "1.4/edge"
 TLS_PROVIDER_NAME = "self-signed-certificates"
+TLS_PROVIDER_CHANNEL = "latest/stable"
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent-k8s"
+GRAFANA_AGENT_APPLICATION_CHANNEL = "latest/stable"
 
 
 async def _deploy_mongodb(ops_test: OpsTest):
@@ -29,7 +33,7 @@ async def _deploy_mongodb(ops_test: OpsTest):
     await ops_test.model.deploy(
         DB_APPLICATION_NAME,
         application_name=DB_APPLICATION_NAME,
-        channel="6/beta",
+        channel=DB_APPLICATION_CHANNEL,
         trust=True,
     )
 
@@ -39,7 +43,7 @@ async def _deploy_grafana_agent(ops_test: OpsTest):
     await ops_test.model.deploy(
         GRAFANA_AGENT_APPLICATION_NAME,
         application_name=GRAFANA_AGENT_APPLICATION_NAME,
-        channel="stable",
+        channel=GRAFANA_AGENT_APPLICATION_CHANNEL,
     )
 
 
@@ -49,7 +53,7 @@ async def _deploy_sdcore_nrf_operator(ops_test: OpsTest):
     await ops_test.model.deploy(
         NRF_APPLICATION_NAME,
         application_name=NRF_APPLICATION_NAME,
-        channel="edge",
+        channel=NRF_APPLICATION_CHANNEL,
         trust=True,
     )
     await ops_test.model.integrate(relation1=DB_APPLICATION_NAME, relation2=NRF_APPLICATION_NAME)
@@ -61,7 +65,7 @@ async def _deploy_tls_provider(ops_test: OpsTest):
     await ops_test.model.deploy(
         TLS_PROVIDER_NAME,
         application_name=TLS_PROVIDER_NAME,
-        channel="beta",
+        channel=TLS_PROVIDER_CHANNEL,
     )
 
 
