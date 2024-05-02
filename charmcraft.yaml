@@ -1,3 +1,51 @@
+name: sdcore-nssf-k8s
+
+summary: A Charmed Operator for SD-Core's Network Slice Selection Function (NSSF).
+description: |
+  A Charmed Operator for SD-Core's Network Slice Selection Function (NSSF).
+links:
+  website:
+    - https://charmhub.io/sdcore-nssf-k8s
+  source:
+    - https://github.com/canonical/sdcore-nssf-k8s-operator
+  issues:
+    - https://github.com/canonical/sdcore-nssf-k8s-operator/issues
+
+containers:
+  nssf:
+    resource: nssf-image
+    mounts:
+      - storage: config
+        location: /free5gc/config/
+      - storage: certs
+        location: /support/TLS
+
+resources:
+  nssf-image:
+    type: oci-image
+    description: OCI image for 5G nssf
+    upstream-source: ghcr.io/canonical/sdcore-nssf:1.4.0
+
+storage:
+  config:
+    type: filesystem
+    minimum-size: 1M
+  certs:
+    type: filesystem
+    minimum-size: 1M
+
+assumes:
+  - k8s-api
+  - juju >= 3.4
+
+requires:
+  fiveg_nrf:
+    interface: fiveg_nrf
+  certificates:
+    interface: tls-certificates
+  logging:
+      interface: loki_push_api
+
 type: charm
 bases:
   - build-on:
@@ -15,3 +63,14 @@ parts:
       - libssl-dev
       - pkg-config
       - rustc
+
+config:
+  options:
+    sd:
+      type: string
+      default: "010203"
+      description: Slice ID
+    sst:
+      type: int
+      default: 1
+      description: Slice Selection Type
