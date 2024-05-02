@@ -64,7 +64,7 @@ class TestCharm(unittest.TestCase):
         Returns:
             dics: metadata.yaml as a dictionary.
         """
-        with open("metadata.yaml", "r") as f:
+        with open("charmcraft.yaml", "r") as f:
             data = yaml.safe_load(f)
         return data
 
