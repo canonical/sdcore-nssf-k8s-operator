@@ -114,25 +114,14 @@ class TestCharm:
 
     @staticmethod
     def _get_metadata() -> dict:
-        """Read `charmcraft.yaml` and returns it as a dictionary.
-
-        Returns:
-            dics: charmcraft.yaml as a dictionary.
-        """
+        """Read `charmcraft.yaml` and returns it as a dictionary."""
         with open("charmcraft.yaml", "r") as f:
             data = yaml.safe_load(f)
         return data
 
     @staticmethod
     def _read_file(path: str) -> str:
-        """Read a file and returns as a string.
-
-        Args:
-            path (str): path to the file.
-
-        Returns:
-            str: content of the file.
-        """
+        """Read a file and returns as a string."""
         with open(path, "r") as f:
             content = f.read()
         return content
@@ -220,42 +209,13 @@ class TestCharm:
         self.harness.evaluate_status()
         assert self.harness.model.unit.status == WaitingStatus("Waiting for NRF data to be available")  # noqa: E501
 
-    def test_given_relation_created_and_nrf_data_available_and_config_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
-        self, fiveg_nrf_relation_id, certificates_relation_id
+    @pytest.mark.parametrize("storage", ["certs", "config"])
+    def test_given_relation_created_and_nrf_data_available_and_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
+        self, fiveg_nrf_relation_id, certificates_relation_id, storage
     ):
-        self.harness.add_storage(storage_name="certs", attach=True)
-
-        root = self.harness.get_filesystem_root(CONTAINER_NAME)
+        self.harness.add_storage(storage_name=storage, attach=True)
 
         self.harness.set_can_connect(container=CONTAINER_NAME, val=True)
-
-        provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = STORED_CERTIFICATE
-        provider_certificate.csr = STORED_CSR
-        self.mock_get_assigned_certificates.return_value = [provider_certificate]
-
-        (root / CSR_PATH).write_text(STORED_CSR.decode())
-        (root / CERT_PATH).write_text(STORED_CERTIFICATE)
-
-        self.harness.container_pebble_ready(CONTAINER_NAME)
-        self.harness.evaluate_status()
-        assert self.harness.charm.unit.status == WaitingStatus("Waiting for storage to be attached")  # noqa: E501
-
-    def test_given_relations_created_and_nrf_data_available_and_certs_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
-        self, fiveg_nrf_relation_id, certificates_relation_id
-    ):
-        self.harness.add_storage(storage_name="config", attach=True)
-
-        root = self.harness.get_filesystem_root(CONTAINER_NAME)
-
-        self.harness.set_can_connect(container=CONTAINER_NAME, val=True)
-
-        provider_certificate = Mock(ProviderCertificate)
-        provider_certificate.certificate = STORED_CERTIFICATE
-        provider_certificate.csr = STORED_CSR
-        self.mock_get_assigned_certificates.return_value = [provider_certificate]
-
-        (root / CONFIG_PATH).write_text("super different config file content")
 
         self.harness.container_pebble_ready(CONTAINER_NAME)
         self.harness.evaluate_status()
@@ -437,13 +397,7 @@ class TestCharm:
         assert self.harness.model.unit.status == ActiveStatus("")
         self.mock_restart.assert_called_once_with(CONTAINER_NAME)
 
-    def test_given_cannot_connect_to_container_when_nrf_available_then_status_is_waiting(
-        self, add_storage, fiveg_nrf_relation_id, certificates_relation_id
-    ):
-        self.harness.evaluate_status()
-        assert self.harness.model.unit.status == WaitingStatus("Waiting for container to start")
-
-    def test_given_cannot_connect_to_container_when_certificates_relation_changed_then_status_is_waiting(  # noqa: E501
+    def test_given_cannot_connect_to_container_then_status_is_waiting(
         self, add_storage, fiveg_nrf_relation_id, certificates_relation_id
     ):
         self.harness.evaluate_status()
