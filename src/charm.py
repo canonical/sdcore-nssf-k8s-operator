@@ -194,11 +194,11 @@ class NSSFOperatorCharm(CharmBase):
             return False
         return service.is_running()
 
-    def _configure_nssf(self, event: EventBase) -> None:  # noqa: C901
+    def _configure_nssf(self, _: EventBase) -> None:  # noqa: C901
         """Configure NSSF configuration file and pebble service.
 
         Args:
-            event (EventBase): Juju event
+            _ (EventBase): Juju event
         """
         if not self._ready_to_configure():
             logger.info("The preconditions for the configuration are not met yet.")
@@ -455,8 +455,8 @@ class NSSFOperatorCharm(CharmBase):
             return True
         return False
 
+    @staticmethod
     def _render_config_file(
-        self,
         *,
         nssf_ip: str,
         sbi_port: int,
