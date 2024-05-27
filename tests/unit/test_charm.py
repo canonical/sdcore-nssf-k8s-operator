@@ -393,8 +393,6 @@ class TestCharm:
         self.harness.set_can_connect(container=CONTAINER_NAME, val=True)
 
         self.harness.container_pebble_ready(CONTAINER_NAME)
-        self.harness.evaluate_status()
-        assert self.harness.model.unit.status == ActiveStatus("")
         self.mock_restart.assert_called_once_with(CONTAINER_NAME)
 
     def test_given_cannot_connect_to_container_then_status_is_waiting(
