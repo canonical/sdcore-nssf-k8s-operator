@@ -15,6 +15,7 @@ juju deploy self-signed-certificates
 juju integrate mongodb-k8s sdcore-nrf
 juju integrate sdcore-nrf-k8s:certificates self-signed-certificates:certificates
 juju integrate sdcore-nrf-k8s sdcore-nssf-k8s
+juju integrate sdcore-nrf-k8s:sdcore_config sdcore-webui-k8s:sdcore-config
 juju integrate sdcore-nssf-k8s:certificates self-signed-certificates:certificates
 juju integrate sdcore-nssf-k8s:sdcore_config sdcore-webui-k8s:sdcore-config
 ```

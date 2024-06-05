@@ -95,6 +95,7 @@ async def deploy(ops_test: OpsTest, request):
     await deploy_webui
     await ops_test.model.integrate(relation1=DB_APPLICATION_NAME, relation2=NRF_APPLICATION_NAME)
     await ops_test.model.integrate(relation1=NRF_APPLICATION_NAME, relation2=TLS_PROVIDER_NAME)
+    await ops_test.model.integrate(relation1=NRF_APPLICATION_NAME, relation2=WEBUI_CHARM_NAME)
     await ops_test.model.integrate(
         relation1=f"{WEBUI_CHARM_NAME}:common_database", relation2=f"{DB_APPLICATION_NAME}"
     )
@@ -147,6 +148,7 @@ async def test_restore_nrf_and_wait_for_active_status(ops_test: OpsTest, deploy)
         trust=True,
     )
     await ops_test.model.integrate(relation1=DB_APPLICATION_NAME, relation2=NRF_APPLICATION_NAME)
+    await ops_test.model.integrate(relation1=NRF_APPLICATION_NAME, relation2=WEBUI_CHARM_NAME)
     await ops_test.model.integrate(relation1=NRF_APPLICATION_NAME, relation2=TLS_PROVIDER_NAME)
     await ops_test.model.integrate(relation1=APP_NAME, relation2=NRF_APPLICATION_NAME)
     await ops_test.model.wait_for_idle(apps=[APP_NAME], status="active", timeout=TIMEOUT)
