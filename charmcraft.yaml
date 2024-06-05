@@ -24,7 +24,7 @@ resources:
   nssf-image:
     type: oci-image
     description: OCI image for 5G nssf
-    upstream-source: ghcr.io/canonical/sdcore-nssf:1.4.0
+    upstream-source: ghcr.io/canonical/sdcore-nssf:1.4.1
 
 storage:
   config:
