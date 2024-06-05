@@ -114,6 +114,10 @@ async def deploy(ops_test: OpsTest, request):
 @pytest.mark.abort_on_fail
 async def test_relate_and_wait_for_active_status(ops_test: OpsTest, deploy):
     assert ops_test.model
+    await ops_test.model.integrate(
+        relation1=NRF_APPLICATION_NAME,
+        relation2=WEBUI_CHARM_NAME,
+    )
     await ops_test.model.integrate(relation1=APP_NAME, relation2=NRF_APPLICATION_NAME)
     await ops_test.model.integrate(relation1=APP_NAME, relation2=TLS_PROVIDER_NAME)
     await ops_test.model.integrate(
@@ -149,6 +153,10 @@ async def test_restore_nrf_and_wait_for_active_status(ops_test: OpsTest, deploy)
         relation1=f"{NRF_APPLICATION_NAME}:database", relation2=f"{DB_APPLICATION_NAME}"
     )
     await ops_test.model.integrate(relation1=NRF_APPLICATION_NAME, relation2=TLS_PROVIDER_NAME)
+    await ops_test.model.integrate(
+        relation1=NRF_APPLICATION_NAME,
+        relation2=WEBUI_CHARM_NAME,
+    )
     await ops_test.model.integrate(relation1=APP_NAME, relation2=NRF_APPLICATION_NAME)
     await ops_test.model.wait_for_idle(apps=[APP_NAME], status="active", timeout=TIMEOUT)
 
@@ -184,6 +192,10 @@ async def test_remove_webui_and_wait_for_blocked_status(ops_test: OpsTest, deplo
 async def test_restore_webui_and_wait_for_active_status(ops_test: OpsTest, deploy):
     assert ops_test.model
     await _deploy_webui(ops_test)
+    await ops_test.model.integrate(
+        relation1=NRF_APPLICATION_NAME,
+        relation2=WEBUI_CHARM_NAME,
+    )
     await ops_test.model.integrate(
         relation1=f"{APP_NAME}:sdcore_config", relation2=f"{WEBUI_CHARM_NAME}:sdcore-config"
     )
