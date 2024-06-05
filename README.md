@@ -8,11 +8,15 @@ Charmed Operator for the SD-Core Network Slice Selection Function (NSSF) for K8s
 juju deploy mongodb-k8s --trust --channel=6/beta
 juju deploy sdcore-nrf-k8s --channel=1.5/edge
 juju deploy sdcore-nssf-k8s --channel=1.5/edge
+juju deploy sdcore-webui-k8s --channel=1.5/edge
+juju integrate sdcore-webui-k8s:common_database mongodb-k8s:database
+juju integrate sdcore-webui-k8s:auth_database mongodb-k8s:database
 juju deploy self-signed-certificates
 juju integrate mongodb-k8s sdcore-nrf
 juju integrate sdcore-nrf-k8s:certificates self-signed-certificates:certificates
 juju integrate sdcore-nrf-k8s sdcore-nssf-k8s
 juju integrate sdcore-nssf-k8s:certificates self-signed-certificates:certificates
+juju integrate sdcore-amf-k8s:sdcore_config sdcore-webui-k8s:sdcore-config
 ```
 
 ## Image

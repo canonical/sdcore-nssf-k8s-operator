@@ -7,10 +7,13 @@
 import logging
 from ipaddress import IPv4Address
 from subprocess import check_output
-from typing import Optional, cast
+from typing import List, Optional, cast
 
 from charms.loki_k8s.v1.loki_push_api import LogForwarder  # type: ignore[import]
 from charms.sdcore_nrf_k8s.v0.fiveg_nrf import NRFRequires  # type: ignore[import]
+from charms.sdcore_webui_k8s.v0.sdcore_config import (  # type: ignore[import]
+    SdcoreConfigRequires,
+)
 from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
     CertificateExpiringEvent,
     TLSCertificatesRequiresV3,
@@ -45,6 +48,7 @@ CERTIFICATE_COMMON_NAME = "nssf.sdcore"
 LOGGING_RELATION_NAME = "logging"
 TLS_RELATION_NAME = "certificates"
 NRF_RELATION_NAME = "fiveg_nrf"
+SDCORE_CONFIG_RELATION_NAME = "sdcore_config"
 
 
 class NSSFOperatorCharm(CharmBase):
@@ -63,6 +67,9 @@ class NSSFOperatorCharm(CharmBase):
         self._container_name = self._service_name = "nssf"
         self._container = self.unit.get_container(self._container_name)
         self._nrf_requires = NRFRequires(charm=self, relation_name=NRF_RELATION_NAME)
+        self._webui_requires = SdcoreConfigRequires(
+            charm=self, relation_name=SDCORE_CONFIG_RELATION_NAME
+        )
         self.unit.set_ports(SBI_PORT)
         self._certificates = TLSCertificatesRequiresV3(self, TLS_RELATION_NAME)
         self._logging = LogForwarder(charm=self, relation_name=LOGGING_RELATION_NAME)
@@ -79,6 +86,11 @@ class NSSFOperatorCharm(CharmBase):
         self.framework.observe(
             self._certificates.on.certificate_expiring, self._on_certificate_expiring
         )
+        self.framework.observe(
+            self._webui_requires.on.webui_url_available,
+            self._configure_nssf
+        )
+        self.framework.observe(self.on.sdcore_config_relation_joined, self._configure_nssf)
 
     def _on_collect_unit_status(self, event: CollectStatusEvent):  # noqa C901
         """Check the unit status and set to Unit when CollectStatusEvent is fired.
@@ -108,15 +120,21 @@ class NSSFOperatorCharm(CharmBase):
             logger.info("The following configurations are not valid: %s", invalid_configs)
             return
 
-        for relation in ["fiveg_nrf", "certificates"]:
-            if not self.model.relations[relation]:
-                event.add_status(BlockedStatus(f"Waiting for {relation} relation"))
-                logger.info("Waiting for %s relation", relation)
-                return
+        if missing_relations := self._missing_relations():
+            event.add_status(
+                BlockedStatus(f"Waiting for {', '.join(missing_relations)} relation(s)")
+            )
+            logger.info("Waiting for %s  relation(s)", ', '.join(missing_relations))
+            return
 
         if not self._nrf_data_is_available:
             event.add_status(WaitingStatus("Waiting for NRF data to be available"))
             logger.info("Waiting for NRF data to be available")
+            return
+
+        if not self._webui_requires.webui_url:
+            event.add_status(WaitingStatus("Waiting for Webui data to be available"))
+            logger.info("Waiting for Webui data to be available")
             return
 
         if not self._container.exists(path=CONFIG_DIR) or not self._container.exists(
@@ -155,9 +173,8 @@ class NSSFOperatorCharm(CharmBase):
         if self._get_invalid_configs():
             return False
 
-        for relation in ["fiveg_nrf", "certificates"]:
-            if not self._relation_created(relation):
-                return False
+        if self._missing_relations():
+            return False
 
         if not self._nrf_data_is_available:
             return False
@@ -179,6 +196,22 @@ class NSSFOperatorCharm(CharmBase):
         return self._container.exists(path=CONFIG_DIR) and self._container.exists(
             path=CERTS_DIR_PATH
         )
+
+    def _missing_relations(self) -> List[str]:
+        """Return list of missing relations.
+
+        If all the relations are created, it returns an empty list.
+
+        Returns:
+            list: missing relation names.
+        """
+        missing_relations = []
+        for relation in [NRF_RELATION_NAME,
+                         TLS_RELATION_NAME,
+                         SDCORE_CONFIG_RELATION_NAME]:
+            if not self._relation_created(relation):
+                missing_relations.append(relation)
+        return missing_relations
 
     def _nssf_service_is_running(self) -> bool:
         """Check if the NSSF service is running.
@@ -294,6 +327,7 @@ class NSSFOperatorCharm(CharmBase):
             sst=self._get_sst_config(),  # type: ignore[arg-type]
             sd=self._get_sd_config(),  # type: ignore[arg-type]
             scheme="https",
+            webui_uri=self._webui_requires.webui_url,
         )
 
     def _on_certificates_relation_broken(self, event: RelationBrokenEvent) -> None:
@@ -434,27 +468,6 @@ class NSSFOperatorCharm(CharmBase):
             invalid_configs.append("sst")
         return invalid_configs
 
-    def _apply_nssf_config(self) -> bool:
-        """Generate and push NSSF configuration file.
-
-        Returns:
-            bool: True if the configuration file was changed.
-        """
-        content = self._render_config_file(
-            sbi_port=SBI_PORT,
-            nrf_url=self._nrf_requires.nrf_url,
-            nssf_ip=_get_pod_ip(),  # type: ignore[arg-type]
-            sst=self._get_sst_config(),  # type: ignore[arg-type]
-            sd=self._get_sd_config(),  # type: ignore[arg-type]
-            scheme="https",
-        )
-        if not self._config_file_content_matches(content):
-            self._push_config_file(
-                content=content,
-            )
-            return True
-        return False
-
     @staticmethod
     def _render_config_file(
         *,
@@ -464,6 +477,7 @@ class NSSFOperatorCharm(CharmBase):
         sst: int,
         sd: str,
         scheme: str,
+        webui_uri: str,
     ):
         """Render the NSSF config file.
 
@@ -474,6 +488,7 @@ class NSSFOperatorCharm(CharmBase):
             sst (int): Slice Selection Type
             sd (str): Slice ID
             scheme (str): SBI interface scheme ("http" or "https")
+            webui_uri (str) : URL of the Webui
         """
         jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR))
         template = jinja2_environment.get_template(CONFIG_TEMPLATE_NAME)
@@ -484,6 +499,7 @@ class NSSFOperatorCharm(CharmBase):
             sst=sst,
             sd=sd,
             scheme=scheme,
+            webui_uri=webui_uri,
         )
         return content
 
