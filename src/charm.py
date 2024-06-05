@@ -169,7 +169,7 @@ class NSSFOperatorCharm(CharmBase):
             logger.info("Waiting for NRF data to be available")
             return
 
-        if not self._webui_data_is_available:
+        if not self._webui_url_is_available:
             event.add_status(WaitingStatus("Waiting for Webui data to be available"))
             logger.info("Waiting for Webui data to be available")
             return
@@ -216,7 +216,7 @@ class NSSFOperatorCharm(CharmBase):
         if not self._nrf_data_is_available:
             return False
 
-        if not self._webui_data_is_available:
+        if not self._webui_url_is_available:
             return False
 
         if not self._storage_is_attached():
@@ -254,7 +254,7 @@ class NSSFOperatorCharm(CharmBase):
         return missing_relations
 
     @property
-    def _webui_data_is_available(self) -> bool:
+    def _webui_url_is_available(self) -> bool:
         return bool(self._webui_requires.webui_url)
 
     def _nssf_service_is_running(self) -> bool:
