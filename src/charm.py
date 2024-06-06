@@ -92,6 +92,43 @@ class NSSFOperatorCharm(CharmBase):
         )
         self.framework.observe(self.on.sdcore_config_relation_joined, self._configure_nssf)
 
+    def _configure_nssf(self, _: EventBase) -> None:
+        """Handle Juju events.
+
+        This event handler is called for every event that affects the charm state
+        (ex. configuration files, relation data). This method performs a couple of checks
+        to make sure that the workload is ready to be started. Then, it configures the NSSF
+        workload and runs the Pebble services.
+
+        Args:
+            _ (EventBase): Juju event
+        """
+        if not self._ready_to_configure():
+            logger.info("The preconditions for the configuration are not met yet.")
+            return
+
+        if not self._private_key_is_stored():
+            self._generate_private_key()
+
+        if not self._csr_is_stored():
+            self._request_new_certificate()
+
+        provider_certificate = self._get_current_provider_certificate()
+        if not provider_certificate:
+            return
+
+        if certificate_update_required := self._is_certificate_update_required(
+            provider_certificate
+        ):
+            self._store_certificate(certificate=provider_certificate)
+
+        desired_config_file = self._generate_nssf_config_file()
+        if config_update_required := self._is_config_update_required(desired_config_file):
+            self._push_config_file(content=desired_config_file)
+
+        should_restart = config_update_required or certificate_update_required
+        self._configure_pebble(restart=should_restart)
+
     def _on_collect_unit_status(self, event: CollectStatusEvent):  # noqa C901
         """Check the unit status and set to Unit when CollectStatusEvent is fired.
 
@@ -132,7 +169,7 @@ class NSSFOperatorCharm(CharmBase):
             logger.info("Waiting for NRF data to be available")
             return
 
-        if not self._webui_requires.webui_url:
+        if not self._webui_url_is_available:
             event.add_status(WaitingStatus("Waiting for Webui data to be available"))
             logger.info("Waiting for Webui data to be available")
             return
@@ -179,6 +216,9 @@ class NSSFOperatorCharm(CharmBase):
         if not self._nrf_data_is_available:
             return False
 
+        if not self._webui_url_is_available:
+            return False
+
         if not self._storage_is_attached():
             return False
 
@@ -213,6 +253,10 @@ class NSSFOperatorCharm(CharmBase):
                 missing_relations.append(relation)
         return missing_relations
 
+    @property
+    def _webui_url_is_available(self) -> bool:
+        return bool(self._webui_requires.webui_url)
+
     def _nssf_service_is_running(self) -> bool:
         """Check if the NSSF service is running.
 
@@ -226,38 +270,6 @@ class NSSFOperatorCharm(CharmBase):
         except ModelError:
             return False
         return service.is_running()
-
-    def _configure_nssf(self, _: EventBase) -> None:  # noqa: C901
-        """Configure NSSF configuration file and pebble service.
-
-        Args:
-            _ (EventBase): Juju event
-        """
-        if not self._ready_to_configure():
-            logger.info("The preconditions for the configuration are not met yet.")
-            return
-
-        if not self._private_key_is_stored():
-            self._generate_private_key()
-
-        if not self._csr_is_stored():
-            self._request_new_certificate()
-
-        provider_certificate = self._get_current_provider_certificate()
-        if not provider_certificate:
-            return
-
-        if certificate_update_required := self._is_certificate_update_required(
-            provider_certificate
-        ):
-            self._store_certificate(certificate=provider_certificate)
-
-        desired_config_file = self._generate_nssf_config_file()
-        if config_update_required := self._is_config_update_required(desired_config_file):
-            self._push_config_file(content=desired_config_file)
-
-        should_restart = config_update_required or certificate_update_required
-        self._configure_pebble(restart=should_restart)
 
     def _is_config_update_required(self, content: str) -> bool:
         """Decide whether config update is required by checking existence and config content.
