@@ -10,6 +10,9 @@ from subprocess import check_output
 from typing import List, Optional, cast
 
 from charms.loki_k8s.v1.loki_push_api import LogForwarder  # type: ignore[import]
+from charms.prometheus_k8s.v0.prometheus_scrape import (  # type: ignore[import]
+    MetricsEndpointProvider,
+)
 from charms.sdcore_nrf_k8s.v0.fiveg_nrf import NRFRequires  # type: ignore[import]
 from charms.sdcore_webui_k8s.v0.sdcore_config import (  # type: ignore[import]
     SdcoreConfigRequires,
@@ -35,6 +38,7 @@ from ops.pebble import Layer, PathError
 
 logger = logging.getLogger(__name__)
 
+PROMETHEUS_PORT = 8080
 SBI_PORT = 29531
 CONFIG_DIR = "/free5gc/config"
 CONFIG_FILE_NAME = "nssfcfg.conf"
@@ -70,7 +74,15 @@ class NSSFOperatorCharm(CharmBase):
         self._webui_requires = SdcoreConfigRequires(
             charm=self, relation_name=SDCORE_CONFIG_RELATION_NAME
         )
-        self.unit.set_ports(SBI_PORT)
+        self._nssf_metrics_endpoint = MetricsEndpointProvider(
+            self,
+            jobs=[
+                {
+                    "static_configs": [{"targets": [f"*:{PROMETHEUS_PORT}"]}],
+                }
+            ],
+        )
+        self.unit.set_ports(PROMETHEUS_PORT, SBI_PORT)
         self._certificates = TLSCertificatesRequiresV3(self, TLS_RELATION_NAME)
         self._logging = LogForwarder(charm=self, relation_name=LOGGING_RELATION_NAME)
         self.framework.observe(self.on.config_changed, self._configure_nssf)

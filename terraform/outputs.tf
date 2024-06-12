@@ -28,3 +28,9 @@ output "sdcore_config_endpoint" {
   value       = "sdcore_config"
 }
 
+# Provided integration endpoints
+
+output "metrics_endpoint" {
+  description = "Exposes the Prometheus metrics endpoint providing telemetry about the NSSF instance."
+  value       = "metrics-endpoint"
+}
