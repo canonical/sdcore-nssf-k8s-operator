@@ -712,6 +712,10 @@ class TestCharm:
 
     def test_given_no_workload_version_file_when_pebble_ready_then_workload_version_not_set(  # noqa: E501
         self,
+        add_storage,
+        fiveg_nrf_relation_id,
+        certificates_relation_id,
+        sdcore_config_relation_id,
     ):
         self.harness.container_pebble_ready(container_name=CONTAINER_NAME)
         self.harness.evaluate_status()
@@ -720,6 +724,10 @@ class TestCharm:
 
     def test_given_workload_version_file_when_pebble_ready_then_workload_version_set(
         self,
+        add_storage,
+        fiveg_nrf_relation_id,
+        certificates_relation_id,
+        sdcore_config_relation_id,
     ):
         expected_version = "1.2.3"
         root = self.harness.get_filesystem_root(CONTAINER_NAME)
