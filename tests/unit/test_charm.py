@@ -1,6 +1,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import os
 from typing import Generator
 from unittest.mock import Mock, PropertyMock, patch
 
@@ -54,17 +55,20 @@ EXPECTED_PEBBLE_PLAN = {
 class TestCharm:
     patcher_check_output = patch("charm.check_output")
     patcher_nrf_url = patch(
-        "charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url",
-        new_callable=PropertyMock
+        "charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock
     )
     patcher_webui_url = patch(
         "charms.sdcore_webui_k8s.v0.sdcore_config.SdcoreConfigRequires.webui_url",
-        new_callable=PropertyMock
+        new_callable=PropertyMock,
     )
     patcher_generate_csr = patch("charm.generate_csr")
     patcher_generate_private_key = patch("charm.generate_private_key")
-    patcher_get_assigned_certificates = patch("charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.get_assigned_certificates")  # noqa: E501
-    patcher_request_certificate_creation = patch("charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.request_certificate_creation")  # noqa: E501
+    patcher_get_assigned_certificates = patch(
+        "charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.get_assigned_certificates"
+    )
+    patcher_request_certificate_creation = patch(
+        "charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.request_certificate_creation"
+    )
     patcher_restart = patch("ops.model.Container.restart")
 
     @pytest.fixture()
@@ -78,7 +82,9 @@ class TestCharm:
         self.mock_generate_private_key = TestCharm.patcher_generate_private_key.start()
         self.mock_generate_private_key.return_value = PRIVATE_KEY
         self.mock_get_assigned_certificates = TestCharm.patcher_get_assigned_certificates.start()
-        self.mock_request_certificate_creation = TestCharm.patcher_request_certificate_creation.start()  # noqa: E501
+        self.mock_request_certificate_creation = (
+            TestCharm.patcher_request_certificate_creation.start()
+        )
         self.mock_restart = TestCharm.patcher_restart.start()
         self.mock_webui_url = TestCharm.patcher_webui_url.start()
 
@@ -107,9 +113,7 @@ class TestCharm:
             relation_name=NRF_RELATION_NAME,
             remote_app="whatever-nrf",
         )
-        self.harness.add_relation_unit(
-            relation_id=relation_id, remote_unit_name="whatever-nrf/0"
-        )
+        self.harness.add_relation_unit(relation_id=relation_id, remote_unit_name="whatever-nrf/0")
         yield relation_id
 
     @pytest.fixture()
@@ -288,7 +292,9 @@ class TestCharm:
         self.mock_nrf_url.return_value = ""
         self.harness.container_pebble_ready(CONTAINER_NAME)
         self.harness.evaluate_status()
-        assert self.harness.model.unit.status == WaitingStatus("Waiting for NRF data to be available")  # noqa: E501
+        assert self.harness.model.unit.status == WaitingStatus(
+            "Waiting for NRF data to be available"
+        )
 
     def test_given_webui_data_not_available_when_pebble_ready_then_status_is_waiting(
         self, fiveg_nrf_relation_id, certificates_relation_id, sdcore_config_relation_id
@@ -297,7 +303,9 @@ class TestCharm:
         self.mock_webui_url.return_value = ""
         self.harness.container_pebble_ready(CONTAINER_NAME)
         self.harness.evaluate_status()
-        assert self.harness.model.unit.status == WaitingStatus("Waiting for Webui data to be available")  # noqa: E501
+        assert self.harness.model.unit.status == WaitingStatus(
+            "Waiting for Webui data to be available"
+        )
 
     @pytest.mark.parametrize("storage", ["certs", "config"])
     def test_given_relation_created_and_nrf_data_available_and_storage_not_attached_when_pebble_ready_then_status_is_waiting(  # noqa: E501
@@ -554,9 +562,7 @@ class TestCharm:
         sdcore_config_relation_id,
     ):
         self.harness.evaluate_status()
-        assert self.harness.model.unit.status == WaitingStatus(
-            "Waiting for container to start"
-        )
+        assert self.harness.model.unit.status == WaitingStatus("Waiting for container to start")
 
     def test_given_can_connect_and_private_key_doesnt_exist_when_certificates_relation_joined_then_private_key_is_generated(  # noqa: E501
         self,
@@ -573,7 +579,9 @@ class TestCharm:
 
         assert (root / KEY_PATH).read_text() == PRIVATE_KEY.decode()
 
-    def test_given_certificates_are_stored_when_on_certificates_relation_broken_then_certificates_are_removed(self):  # noqa: E501
+    def test_given_certificates_are_stored_when_on_certificates_relation_broken_then_certificates_are_removed(  # noqa: E501
+        self,
+    ):
         self.harness.set_can_connect(container=CONTAINER_NAME, val=True)
         self.harness.add_storage(storage_name="certs", attach=True)
 
@@ -701,3 +709,23 @@ class TestCharm:
 
         with pytest.raises(FileNotFoundError):
             (root / CERT_PATH).read_text()
+
+    def test_given_no_workload_version_file_when_pebble_ready_then_workload_version_not_set(  # noqa: E501
+        self,
+    ):
+        self.harness.container_pebble_ready(container_name=CONTAINER_NAME)
+        self.harness.evaluate_status()
+        version = self.harness.get_workload_version()
+        assert version == ""
+
+    def test_given_workload_version_file_when_pebble_ready_then_workload_version_set(
+        self,
+    ):
+        expected_version = "1.2.3"
+        root = self.harness.get_filesystem_root(CONTAINER_NAME)
+        os.mkdir(f"{root}/etc")
+        (root / "etc/workload-version").write_text(expected_version)
+        self.harness.container_pebble_ready(container_name=CONTAINER_NAME)
+        self.harness.evaluate_status()
+        version = self.harness.get_workload_version()
+        assert version == expected_version
