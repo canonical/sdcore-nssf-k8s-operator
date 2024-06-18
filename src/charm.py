@@ -117,8 +117,6 @@ class NSSFOperatorCharm(CharmBase):
             logger.info("The preconditions for the configuration are not met yet.")
             return
 
-        self.unit.set_workload_version(self._get_workload_version())
-
         if not self._private_key_is_stored():
             self._generate_private_key()
 
@@ -144,6 +142,7 @@ class NSSFOperatorCharm(CharmBase):
     def _on_collect_unit_status(self, event: CollectStatusEvent):  # noqa C901
         """Check the unit status and set to Unit when CollectStatusEvent is fired.
 
+        Also sets the application unit workload version if present
         Args:
             event: CollectStatusEvent
         """
@@ -161,6 +160,8 @@ class NSSFOperatorCharm(CharmBase):
             event.add_status(WaitingStatus("Waiting for container to start"))
             logger.info("Waiting for container to start")
             return
+
+        self.unit.set_workload_version(self._get_workload_version())
 
         if invalid_configs := self._get_invalid_configs():
             event.add_status(
