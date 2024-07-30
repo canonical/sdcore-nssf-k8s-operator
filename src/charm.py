@@ -52,7 +52,7 @@ CERTIFICATE_COMMON_NAME = "nssf.sdcore"
 LOGGING_RELATION_NAME = "logging"
 TLS_RELATION_NAME = "certificates"
 NRF_RELATION_NAME = "fiveg_nrf"
-SDCORE_CONFIG_RELATION_NAME = "sdcore-config"
+SDCORE_CONFIG_RELATION_NAME = "sdcore_config"
 WORKLOAD_VERSION_FILE_NAME = "/etc/workload-version"
 
 

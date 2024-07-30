@@ -30,7 +30,7 @@ CERTIFICATES_LIB = (
 STORED_CERTIFICATE = "whatever certificate content"
 STORED_CSR = b"whatever csr content"
 WEBUI_URL = "sdcore-webui:9876"
-SDCORE_CONFIG_RELATION_NAME = "sdcore-config"
+SDCORE_CONFIG_RELATION_NAME = "sdcore_config"
 NMS_APPLICATION_NAME = "sdcore-nms-operator"
 EXPECTED_PEBBLE_PLAN = {
     "services": {
@@ -184,7 +184,7 @@ class TestCharm:
 
         self.harness.evaluate_status()
         assert self.harness.model.unit.status == BlockedStatus(
-            "Waiting for sdcore-config relation(s)"
+            "Waiting for sdcore_config relation(s)"
         )
 
     def test_given_nssf_charm_in_active_status_when_nrf_relation_breaks_then_status_is_blocked(
@@ -260,7 +260,7 @@ class TestCharm:
         self.harness.remove_relation(sdcore_config_relation_id)
         self.harness.evaluate_status()
         assert self.harness.charm.unit.status == BlockedStatus(
-            "Waiting for sdcore-config relation(s)"
+            "Waiting for sdcore_config relation(s)"
         )
 
     def test_given_container_cannot_connect_when_certificates_relation_breaks_then_waiting_for_container_to_start(  # noqa: E501
