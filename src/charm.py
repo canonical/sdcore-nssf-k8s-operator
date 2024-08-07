@@ -9,15 +9,15 @@ from ipaddress import IPv4Address
 from subprocess import check_output
 from typing import List, Optional, cast
 
-from charms.loki_k8s.v1.loki_push_api import LogForwarder  # type: ignore[import]
-from charms.prometheus_k8s.v0.prometheus_scrape import (  # type: ignore[import]
+from charms.loki_k8s.v1.loki_push_api import LogForwarder
+from charms.prometheus_k8s.v0.prometheus_scrape import (
     MetricsEndpointProvider,
 )
-from charms.sdcore_nrf_k8s.v0.fiveg_nrf import NRFRequires  # type: ignore[import]
-from charms.sdcore_webui_k8s.v0.sdcore_config import (  # type: ignore[import]
+from charms.sdcore_nrf_k8s.v0.fiveg_nrf import NRFRequires
+from charms.sdcore_webui_k8s.v0.sdcore_config import (
     SdcoreConfigRequires,
 )
-from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
+from charms.tls_certificates_interface.v3.tls_certificates import (
     CertificateExpiringEvent,
     TLSCertificatesRequiresV3,
     generate_csr,
@@ -32,7 +32,8 @@ from ops import (
     RelationBrokenEvent,
     WaitingStatus,
 )
-from ops.charm import CharmBase, EventBase
+from ops.charm import CharmBase
+from ops.framework import EventBase
 from ops.main import main
 from ops.pebble import Layer, PathError
 
@@ -341,12 +342,22 @@ class NSSFOperatorCharm(CharmBase):
         Returns:
             content (str): desired config file content
         """
+        if not self._nrf_requires.nrf_url:
+            return ""
+        if not (pod_ip := _get_pod_ip()):
+            return ""
+        if not (sst_config := self._get_sst_config()):
+            return ""
+        if not (sd_config := self._get_sd_config()):
+            return ""
+        if not self._webui_requires.webui_url:
+            return ""
         return self._render_config_file(
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
-            nssf_ip=_get_pod_ip(),  # type: ignore[arg-type]
-            sst=self._get_sst_config(),  # type: ignore[arg-type]
-            sd=self._get_sd_config(),  # type: ignore[arg-type]
+            nssf_ip=pod_ip,
+            sst=sst_config,
+            sd=sd_config,
             scheme="https",
             webui_uri=self._webui_requires.webui_url,
         )
@@ -639,7 +650,7 @@ class NSSFOperatorCharm(CharmBase):
         return cast(Optional[str], self.model.config.get("sd"))
 
     def _get_sst_config(self) -> Optional[int]:
-        return int(self.model.config.get("sst"))  # type: ignore[arg-type]
+        return cast(Optional[int], self.model.config.get("sst"))
 
     @property
     def _nrf_data_is_available(self) -> bool:

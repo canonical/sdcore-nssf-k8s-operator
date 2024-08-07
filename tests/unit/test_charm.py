@@ -8,7 +8,7 @@ from unittest.mock import Mock, PropertyMock, patch
 import pytest
 import yaml
 from charm import CONFIG_FILE_NAME, NRF_RELATION_NAME, TLS_RELATION_NAME, NSSFOperatorCharm
-from charms.tls_certificates_interface.v3.tls_certificates import (  # type: ignore[import]
+from charms.tls_certificates_interface.v3.tls_certificates import (
     ProviderCertificate,
 )
 from ops import testing
