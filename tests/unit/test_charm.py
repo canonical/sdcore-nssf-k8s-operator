@@ -31,7 +31,7 @@ STORED_CERTIFICATE = "whatever certificate content"
 STORED_CSR = b"whatever csr content"
 WEBUI_URL = "sdcore-webui:9876"
 SDCORE_CONFIG_RELATION_NAME = "sdcore_config"
-WEBUI_APPLICATION_NAME = "sdcore-webui-operator"
+NMS_APPLICATION_NAME = "sdcore-nms-operator"
 EXPECTED_PEBBLE_PLAN = {
     "services": {
         CONTAINER_NAME: {
@@ -58,7 +58,7 @@ class TestCharm:
         "charms.sdcore_nrf_k8s.v0.fiveg_nrf.NRFRequires.nrf_url", new_callable=PropertyMock
     )
     patcher_webui_url = patch(
-        "charms.sdcore_webui_k8s.v0.sdcore_config.SdcoreConfigRequires.webui_url",
+        "charms.sdcore_nms_k8s.v0.sdcore_config.SdcoreConfigRequires.webui_url",
         new_callable=PropertyMock,
     )
     patcher_generate_csr = patch("charm.generate_csr")
@@ -128,14 +128,14 @@ class TestCharm:
     def sdcore_config_relation_id(self) -> Generator[int, None, None]:
         sdcore_config_relation_id = self.harness.add_relation(  # type:ignore
             relation_name=SDCORE_CONFIG_RELATION_NAME,
-            remote_app=WEBUI_APPLICATION_NAME,
+            remote_app=NMS_APPLICATION_NAME,
         )
         self.harness.add_relation_unit(  # type:ignore
-            relation_id=sdcore_config_relation_id, remote_unit_name=f"{WEBUI_APPLICATION_NAME}/0"
+            relation_id=sdcore_config_relation_id, remote_unit_name=f"{NMS_APPLICATION_NAME}/0"
         )
         self.harness.update_relation_data(  # type:ignore
             relation_id=sdcore_config_relation_id,
-            app_or_unit=WEBUI_APPLICATION_NAME,
+            app_or_unit=NMS_APPLICATION_NAME,
             key_values={
                 "webui_url": WEBUI_URL,
             },
