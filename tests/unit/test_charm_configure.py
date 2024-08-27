@@ -73,12 +73,12 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
             self.ctx.run(container.pebble_ready_event, state_in)
 
             with open(f"{temp_dir}/nssfcfg.conf", "r") as config_file:
-                config_content = config_file.read()
+                actual_config = config_file.read()
 
             with open("tests/unit/expected_config/config.conf", "r") as expected_config_file:
-                expected_content = expected_config_file.read()
+                expected_config = expected_config_file.read()
 
-            assert config_content.strip() == expected_content.strip()
+            assert actual_config.strip() == expected_config.strip()
 
     def test_given_content_of_config_file_not_changed_when_pebble_ready_then_config_file_is_not_pushed(  # noqa: E501
         self,
@@ -116,7 +116,7 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
             )
             self.mock_nrf_url.return_value = "http://nrf:8081"
             self.mock_sdcore_config_webui_url.return_value = "sdcore-webui:9876"
-            self.mock_check_output.return_value = b"1.2.3.4"
+            self.mock_check_output.return_value = b"1.1.1.1"
             self.mock_generate_private_key.return_value = b"private key"
             self.mock_generate_csr.return_value = b"whatever csr"
             self.mock_get_assigned_certificates.return_value = [
@@ -134,20 +134,20 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
             with open(f"{temp_dir}/nrf.csr", "w") as f:
                 f.write("whatever csr")
             with open("tests/unit/expected_config/config.conf", "r") as expected_config_file:
-                expected_content = expected_config_file.read()
+                expected_config = expected_config_file.read()
             with open(f"{temp_dir}/nssfcfg.conf", "w") as config_file:
-                config_file.write(expected_content.strip())
+                config_file.write(expected_config.strip())
             config_modification_time = os.stat(temp_dir + "/nssfcfg.conf").st_mtime
 
             self.ctx.run(container.pebble_ready_event, state_in)
 
             with open(f"{temp_dir}/nssfcfg.conf", "r") as config_file:
-                config_content = config_file.read()
+                actual_config = config_file.read()
 
             with open("tests/unit/expected_config/config.conf", "r") as expected_config_file:
-                expected_content = expected_config_file.read()
+                expected_config = expected_config_file.read()
 
-            assert config_content.strip() == expected_content.strip()
+            assert actual_config.strip() == expected_config.strip()
             assert os.stat(temp_dir + "/nssfcfg.conf").st_mtime == config_modification_time
 
     def test_given_given_workload_ready_when_configure_then_pebble_plan_is_applied(  # noqa: E501
