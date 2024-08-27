@@ -53,6 +53,8 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
             self.mock_nrf_url.return_value = "http://nrf:8081"
             self.mock_sdcore_config_webui_url.return_value = "sdcore-webui:9876"
             self.mock_check_output.return_value = b"1.1.1.1"
+            self.mock_generate_private_key.return_value = b"private key"
+            self.mock_generate_csr.return_value = b"whatever csr"
             self.mock_get_assigned_certificates.return_value = [
                 ProviderCertificate(
                     relation_id=certificates_relation.relation_id,
@@ -115,6 +117,8 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
             self.mock_nrf_url.return_value = "http://nrf:8081"
             self.mock_sdcore_config_webui_url.return_value = "sdcore-webui:9876"
             self.mock_check_output.return_value = b"1.2.3.4"
+            self.mock_generate_private_key.return_value = b"private key"
+            self.mock_generate_csr.return_value = b"whatever csr"
             self.mock_get_assigned_certificates.return_value = [
                 ProviderCertificate(
                     relation_id=certificates_relation.relation_id,
@@ -146,7 +150,7 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
             assert config_content.strip() == expected_content.strip()
             assert os.stat(temp_dir + "/nssfcfg.conf").st_mtime == config_modification_time
 
-    def test_given_given_workload_ready_when_configure_then_config_file_is_rendered_and_pushed(  # noqa: E501
+    def test_given_given_workload_ready_when_configure_then_pebble_plan_is_applied(  # noqa: E501
         self,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -183,6 +187,8 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
             self.mock_nrf_url.return_value = "http://nrf:8081"
             self.mock_sdcore_config_webui_url.return_value = "sdcore-webui:9876"
             self.mock_check_output.return_value = b"1.1.1.1"
+            self.mock_generate_private_key.return_value = b"private key"
+            self.mock_generate_csr.return_value = b"whatever csr"
             self.mock_get_assigned_certificates.return_value = [
                 ProviderCertificate(
                     relation_id=certificates_relation.relation_id,
@@ -222,3 +228,57 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
                     }
                 )
             }
+
+    def test_given_can_connect_when_on_pebble_ready_then_private_key_is_generated(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tempdir:
+            nrf_relation = scenario.Relation(endpoint="fiveg_nrf", interface="fiveg_nrf")
+            certificates_relation = scenario.Relation(
+                endpoint="certificates", interface="tls-certificates"
+            )
+            sdcore_config_relation = scenario.Relation(
+                endpoint="sdcore_config", interface="sdcore_config"
+            )
+            certs_mount = scenario.Mount(
+                location="/support/TLS",
+                src=tempdir,
+            )
+            config_mount = scenario.Mount(
+                location="/free5gc/config",
+                src=tempdir,
+            )
+            container = scenario.Container(
+                name="nssf",
+                can_connect=True,
+                mounts={"certs": certs_mount, "config": config_mount},
+            )
+            state_in = scenario.State(
+                leader=True,
+                containers=[container],
+                relations=[
+                    nrf_relation,
+                    certificates_relation,
+                    sdcore_config_relation,
+                ],
+            )
+            self.mock_get_assigned_certificates.return_value = [
+                ProviderCertificate(
+                    relation_id=certificates_relation.relation_id,
+                    application_name="nssf",
+                    csr="whatever csr",
+                    certificate="whatever cert",
+                    ca="whatever ca",
+                    chain=["whatever ca", "whatever cert"],
+                    revoked=False,
+                    expiry_time=datetime.datetime.now(),
+                )
+            ]
+            self.mock_check_output.return_value = b"1.1.1.1"
+            self.mock_generate_private_key.return_value = b"private key"
+            self.mock_generate_csr.return_value = b"whatever csr"
+
+            self.ctx.run(container.pebble_ready_event, state_in)
+
+            with open(tempdir + "/nssf.key", "r") as f:
+                assert f.read() == "private key"
