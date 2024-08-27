@@ -2,9 +2,10 @@ import tempfile
 
 import pytest
 import scenario
-from charm import NSSFOperatorCharm
 from interface_tester import InterfaceTester
 from ops.pebble import Layer, ServiceStatus
+
+from charm import NSSFOperatorCharm
 
 
 @pytest.fixture
