@@ -21,9 +21,9 @@ def interface_tester(interface_tester: InterfaceTester):
         container = scenario.Container(
             name="nssf",
             can_connect=True,
-            layers={"nrf": Layer({"services": {"nssf": {}}})},
+            layers={"nssf": Layer({"services": {"nssf": {}}})},
             service_status={
-                "nrf": ServiceStatus.ACTIVE,
+                "nssf": ServiceStatus.ACTIVE,
             },
             mounts={
                 "config": config_mount,
