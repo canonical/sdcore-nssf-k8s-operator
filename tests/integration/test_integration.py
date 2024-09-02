@@ -63,7 +63,7 @@ async def test_relate_and_wait_for_active_status(ops_test: OpsTest, deploy):
     )
     await ops_test.model.integrate(
         relation1=f"{APP_NAME}:metrics-endpoint",
-        relation2=f"{GRAFANA_AGENT_CHARM_NAME}:metrics-endpoint"
+        relation2=f"{GRAFANA_AGENT_CHARM_NAME}:metrics-endpoint",
     )
     await ops_test.model.wait_for_idle(
         apps=[APP_NAME],
@@ -120,9 +120,7 @@ async def test_restore_nms_and_wait_for_active_status(ops_test: OpsTest, deploy)
 
 
 @pytest.mark.abort_on_fail
-async def test_when_scale_app_beyond_1_then_only_one_unit_is_active(
-    ops_test: OpsTest, deploy
-):
+async def test_when_scale_app_beyond_1_then_only_one_unit_is_active(ops_test: OpsTest, deploy):
     assert ops_test.model
     assert isinstance(app := ops_test.model.applications[APP_NAME], Application)
     await app.scale(3)

@@ -382,20 +382,6 @@ class NSSFOperatorCharm(CharmBase):
                 return provider_certificate.certificate
         return None
 
-    def _update_certificate(self, provider_certificate) -> bool:
-        """Compare the provided certificate to what is stored.
-
-        Returns True if the certificate was updated
-        """
-        existing_certificate = (
-            self._get_stored_certificate() if self._certificate_is_stored() else ""
-        )
-
-        if existing_certificate != provider_certificate:
-            self._store_certificate(certificate=provider_certificate)
-            return True
-        return False
-
     def _on_certificate_expiring(self, event: CertificateExpiringEvent) -> None:
         """Request new certificate."""
         if not self._container.can_connect():
@@ -580,23 +566,6 @@ class NSSFOperatorCharm(CharmBase):
             make_dirs=True,
         )
         logger.info("Pushed %s config file", CONFIG_FILE_NAME)
-
-    def _configure_nssf_service(self, *, force_restart: bool = False) -> None:
-        """Manage NSSF's pebble layer and service.
-
-        Updates the pebble layer if the proposed config is different from the current one. If layer
-        has been updated also restart the workload service.
-
-        Args:
-            force_restart (bool): Allows for forcibly restarting the service even if Pebble plan
-                didn't change.
-        """
-        pebble_layer = self._pebble_layer
-        plan = self._container.get_plan()
-        if plan.services != pebble_layer.services or force_restart:
-            self._container.add_layer(self._container_name, pebble_layer, combine=True)
-            self._container.restart(self._service_name)
-            logger.info("Restarted container %s", self._service_name)
 
     def _relation_created(self, relation_name: str) -> bool:
         """Return True if the relation is created, False otherwise.
