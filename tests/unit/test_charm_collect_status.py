@@ -18,7 +18,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             leader=False,
         )
 
-        state_out = self.ctx.run("collect_unit_status", state_in)
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == BlockedStatus("Scaling is not implemented for this charm")
 
@@ -31,7 +31,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             leader=True,
         )
 
-        state_out = self.ctx.run("collect_unit_status", state_in)
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == WaitingStatus("Waiting for container to start")
 
@@ -45,7 +45,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             leader=True,
         )
 
-        state_out = self.ctx.run("collect_unit_status", state_in)
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == BlockedStatus(
             "Waiting for fiveg_nrf, certificates, sdcore_config relation(s)"
@@ -68,7 +68,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             leader=True,
         )
 
-        state_out = self.ctx.run("collect_unit_status", state_in)
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == BlockedStatus(
             "Waiting for fiveg_nrf, sdcore_config relation(s)"
@@ -101,7 +101,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
         self.mock_nrf_url.return_value = None
         self.mock_sdcore_config_webui_url.return_value = None
 
-        state_out = self.ctx.run("collect_unit_status", state_in)
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == WaitingStatus("Waiting for NRF data to be available")
 
@@ -132,7 +132,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
         self.mock_nrf_url.return_value = "https://nrf.url"
         self.mock_sdcore_config_webui_url.return_value = None
 
-        state_out = self.ctx.run("collect_unit_status", state_in)
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == WaitingStatus("Waiting for Webui data to be available")
 
@@ -163,7 +163,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
         self.mock_nrf_url.return_value = "https://nrf.url"
         self.mock_sdcore_config_webui_url.return_value = "http://webui.url"
 
-        state_out = self.ctx.run("collect_unit_status", state_in)
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == WaitingStatus("Waiting for storage to be attached")
 
@@ -185,11 +185,11 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             )
             config_mount = scenario.Mount(
                 location="/free5gc/config/",
-                src=temp_dir,
+                source=temp_dir,
             )
             certs_mount = scenario.Mount(
                 location="/support/TLS/",
-                src=temp_dir,
+                source=temp_dir,
             )
             container = scenario.Container(
                 name="nssf",
@@ -205,7 +205,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             self.mock_sdcore_config_webui_url.return_value = "http://webui.url"
             self.mock_check_output.return_value = b""
 
-            state_out = self.ctx.run("collect_unit_status", state_in)
+            state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
             assert state_out.unit_status == WaitingStatus(
                 "Waiting for pod IP address to be available"
@@ -229,11 +229,11 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             )
             config_mount = scenario.Mount(
                 location="/free5gc/config/",
-                src=temp_dir,
+                source=temp_dir,
             )
             certs_mount = scenario.Mount(
                 location="/support/TLS/",
-                src=temp_dir,
+                source=temp_dir,
             )
             container = scenario.Container(
                 name="nssf",
@@ -250,7 +250,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             self.mock_check_output.return_value = b"1.2.3.4"
             self.mock_get_assigned_certificate.return_value = (None, None)
 
-            state_out = self.ctx.run("collect_unit_status", state_in)
+            state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
             assert state_out.unit_status == WaitingStatus(
                 "Waiting for certificates to be available"
@@ -274,11 +274,11 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             )
             config_mount = scenario.Mount(
                 location="/free5gc/config/",
-                src=temp_dir,
+                source=temp_dir,
             )
             certs_mount = scenario.Mount(
                 location="/support/TLS/",
-                src=temp_dir,
+                source=temp_dir,
             )
             container = scenario.Container(
                 name="nssf",
@@ -294,11 +294,11 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             self.mock_sdcore_config_webui_url.return_value = "http://webui.url"
             self.mock_check_output.return_value = b"1.2.3.4"
             provider_certificate, private_key = example_cert_and_key(
-                relation_id=certificates_relation.relation_id
+                relation_id=certificates_relation.id
             )
             self.mock_get_assigned_certificate.return_value = (provider_certificate, private_key)
 
-            state_out = self.ctx.run("collect_unit_status", state_in)
+            state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
             assert state_out.unit_status == WaitingStatus("Waiting for NSSF service to start")
 
@@ -320,18 +320,18 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             )
             config_mount = scenario.Mount(
                 location="/free5gc/config/",
-                src=temp_dir,
+                source=temp_dir,
             )
             certs_mount = scenario.Mount(
                 location="/support/TLS/",
-                src=temp_dir,
+                source=temp_dir,
             )
             container = scenario.Container(
                 name="nssf",
                 can_connect=True,
                 mounts={"config": config_mount, "certs": certs_mount},
                 layers={"nssf": Layer({"services": {"nssf": {}}})},
-                service_status={"nssf": ServiceStatus.ACTIVE},
+                service_statuses={"nssf": ServiceStatus.ACTIVE},
             )
             state_in = scenario.State(
                 containers=[container],
@@ -342,11 +342,11 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             self.mock_sdcore_config_webui_url.return_value = "http://webui.url"
             self.mock_check_output.return_value = b"1.2.3.4"
             provider_certificate, private_key = example_cert_and_key(
-                relation_id=certificates_relation.relation_id
+                relation_id=certificates_relation.id
             )
             self.mock_get_assigned_certificate.return_value = (provider_certificate, private_key)
 
-            state_out = self.ctx.run("collect_unit_status", state_in)
+            state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
             assert state_out.unit_status == ActiveStatus()
 
@@ -363,7 +363,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             )
             workload_version_mount = scenario.Mount(
                 location="/etc",
-                src=tempdir,
+                source=tempdir,
             )
             container = scenario.Container(
                 name="nssf", can_connect=True, mounts={"workload-version": workload_version_mount}
@@ -374,7 +374,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
                 relations=[nrf_relation, certificates_relation, sdcore_config_relation],
             )
 
-            state_out = self.ctx.run("collect_unit_status", state_in)
+            state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
             assert state_out.workload_version == ""
 
@@ -391,7 +391,7 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
             )
             workload_version_mount = scenario.Mount(
                 location="/etc",
-                src=tempdir,
+                source=tempdir,
             )
             expected_version = "1.2.3"
             with open(f"{tempdir}/workload-version", "w") as f:
@@ -405,6 +405,6 @@ class TestCharmCollectStatus(NSSFUnitTestFixtures):
                 relations=[nrf_relation, certificates_relation, sdcore_config_relation],
             )
 
-            state_out = self.ctx.run("collect_unit_status", state_in)
+            state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
             assert state_out.workload_version == expected_version
