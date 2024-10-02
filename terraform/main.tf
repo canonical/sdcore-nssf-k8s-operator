@@ -6,10 +6,14 @@ resource "juju_application" "nssf" {
   model = var.model_name
 
   charm {
-    name    = "sdcore-nssf-k8s"
-    channel = var.channel
+    name     = "sdcore-nssf-k8s"
+    channel  = var.channel
+    revision = var.revision
   }
-  config = var.config
-  units  = 1
-  trust  = true
+
+  config      = var.config
+  constraints = var.constraints
+  units       = var.units
+  resources   = var.resources
+  trust       = true
 }
