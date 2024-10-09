@@ -41,7 +41,7 @@ Create integrations, for instance:
 
 ```text
 resource "juju_integration" "nssf-nrf" {
-  model = var.model_name
+  model = juju_model.my_model.name
   application {
     name     = module.nssf.app_name
     endpoint = module.nssf.requires.fiveg_nrf
