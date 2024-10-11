@@ -5,7 +5,7 @@
 import os
 import tempfile
 
-import scenario
+from ops import testing
 from ops.pebble import Layer
 
 from tests.unit.certificates_helpers import example_cert_and_key
@@ -17,32 +17,32 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
         self,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            certificates_relation = scenario.Relation(
+            certificates_relation = testing.Relation(
                 endpoint="certificates",
                 interface="tls-certificates",
             )
-            nrf_relation = scenario.Relation(
+            nrf_relation = testing.Relation(
                 endpoint="fiveg_nrf",
                 interface="fiveg_nrf",
             )
-            nms_relation = scenario.Relation(
+            nms_relation = testing.Relation(
                 endpoint="sdcore_config",
                 interface="sdcore_config",
             )
-            config_mount = scenario.Mount(
+            config_mount = testing.Mount(
                 location="/free5gc/config/",
                 source=temp_dir,
             )
-            certs_mount = scenario.Mount(
+            certs_mount = testing.Mount(
                 location="/support/TLS",
                 source=temp_dir,
             )
-            container = scenario.Container(
+            container = testing.Container(
                 name="nssf",
                 can_connect=True,
                 mounts={"config": config_mount, "certs": certs_mount},
             )
-            state_in = scenario.State(
+            state_in = testing.State(
                 containers=[container],
                 relations=[certificates_relation, nrf_relation, nms_relation],
                 leader=True,
@@ -69,32 +69,32 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
         self,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            certificates_relation = scenario.Relation(
+            certificates_relation = testing.Relation(
                 endpoint="certificates",
                 interface="tls-certificates",
             )
-            nrf_relation = scenario.Relation(
+            nrf_relation = testing.Relation(
                 endpoint="fiveg_nrf",
                 interface="fiveg_nrf",
             )
-            nms_relation = scenario.Relation(
+            nms_relation = testing.Relation(
                 endpoint="sdcore_config",
                 interface="sdcore_config",
             )
-            config_mount = scenario.Mount(
+            config_mount = testing.Mount(
                 location="/free5gc/config/",
                 source=temp_dir,
             )
-            certs_mount = scenario.Mount(
+            certs_mount = testing.Mount(
                 location="/support/TLS",
                 source=temp_dir,
             )
-            container = scenario.Container(
+            container = testing.Container(
                 name="nssf",
                 can_connect=True,
                 mounts={"config": config_mount, "certs": certs_mount},
             )
-            state_in = scenario.State(
+            state_in = testing.State(
                 containers=[container],
                 relations=[certificates_relation, nrf_relation, nms_relation],
                 leader=True,
@@ -127,32 +127,32 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
         self,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            certificates_relation = scenario.Relation(
+            certificates_relation = testing.Relation(
                 endpoint="certificates",
                 interface="tls-certificates",
             )
-            nrf_relation = scenario.Relation(
+            nrf_relation = testing.Relation(
                 endpoint="fiveg_nrf",
                 interface="fiveg_nrf",
             )
-            nms_relation = scenario.Relation(
+            nms_relation = testing.Relation(
                 endpoint="sdcore_config",
                 interface="sdcore_config",
             )
-            config_mount = scenario.Mount(
+            config_mount = testing.Mount(
                 location="/free5gc/config/",
                 source=temp_dir,
             )
-            certs_mount = scenario.Mount(
+            certs_mount = testing.Mount(
                 location="/support/TLS",
                 source=temp_dir,
             )
-            container = scenario.Container(
+            container = testing.Container(
                 name="nssf",
                 can_connect=True,
                 mounts={"config": config_mount, "certs": certs_mount},
             )
-            state_in = scenario.State(
+            state_in = testing.State(
                 containers=[container],
                 relations=[certificates_relation, nrf_relation, nms_relation],
                 leader=True,
