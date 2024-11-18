@@ -22,4 +22,4 @@ juju integrate sdcore-nssf-k8s:sdcore_config sdcore-nms-k8s:sdcore_config
 
 ## Image
 
-- **nssf**: `ghcr.io/canonical/sdcore-nssf:1.4.1`
+- **nssf**: `ghcr.io/canonical/sdcore-nssf:1.5.1`
