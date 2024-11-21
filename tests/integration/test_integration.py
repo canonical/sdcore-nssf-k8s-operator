@@ -17,7 +17,7 @@ METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 APP_NAME = METADATA["name"]
 
 DB_CHARM_NAME = "mongodb-k8s"
-DB_CHARM_CHANNEL = "6/beta"
+DB_CHARM_CHANNEL = "6/stable"
 NRF_CHARM_NAME = "sdcore-nrf-k8s"
 NRF_CHARM_CHANNEL = "1.5/edge"
 TLS_CHARM_NAME = "self-signed-certificates"
