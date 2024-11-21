@@ -5,7 +5,7 @@ Charmed Operator for the Aether SD-Core Network Slice Selection Function (NSSF) 
 
 ## Usage
 ```bash
-juju deploy mongodb-k8s --trust --channel=6/beta
+juju deploy mongodb-k8s --trust --channel=6/stable
 juju deploy sdcore-nrf-k8s --channel=1.5/edge
 juju deploy sdcore-nssf-k8s --channel=1.5/edge
 juju deploy sdcore-nms-k8s --channel=1.5/edge
