@@ -1,9 +1,0 @@
-juju
-ops
-pydantic
-pytest-interface-tester
-jsonschema
-cryptography
-cosl
-jinja2
-rpds-py==0.18.1
