@@ -19,13 +19,13 @@ APP_NAME = METADATA["name"]
 DB_CHARM_NAME = "mongodb-k8s"
 DB_CHARM_CHANNEL = "6/stable"
 NRF_CHARM_NAME = "sdcore-nrf-k8s"
-NRF_CHARM_CHANNEL = "1.5/edge"
+NRF_CHARM_CHANNEL = "1.6/edge"
 TLS_CHARM_NAME = "self-signed-certificates"
 TLS_CHARM_CHANNEL = "latest/stable"
 GRAFANA_AGENT_CHARM_NAME = "grafana-agent-k8s"
 GRAFANA_AGENT_CHARM_CHANNEL = "latest/stable"
 NMS_CHARM_NAME = "sdcore-nms-k8s"
-NMS_CHARM_CHANNEL = "1.5/edge"
+NMS_CHARM_CHANNEL = "1.6/edge"
 TIMEOUT = 1000
 
 
