@@ -7,7 +7,7 @@
 import logging
 from ipaddress import IPv4Address
 from subprocess import check_output
-from typing import List, Optional, cast
+from typing import List, Optional
 
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.prometheus_k8s.v0.prometheus_scrape import (
@@ -156,13 +156,6 @@ class NSSFOperatorCharm(CharmBase):
 
         self.unit.set_workload_version(self._get_workload_version())
 
-        if invalid_configs := self._get_invalid_configs():
-            event.add_status(
-                BlockedStatus(f"The following configurations are not valid: {invalid_configs}")
-            )
-            logger.info("The following configurations are not valid: %s", invalid_configs)
-            return
-
         if missing_relations := self._missing_relations():
             event.add_status(
                 BlockedStatus(f"Waiting for {', '.join(missing_relations)} relation(s)")
@@ -212,22 +205,14 @@ class NSSFOperatorCharm(CharmBase):
         """
         if not self._container.can_connect():
             return False
-
-        if self._get_invalid_configs():
-            return False
-
         if self._missing_relations():
             return False
-
         if not self._nrf_data_is_available:
             return False
-
         if not self._webui_url_is_available:
             return False
-
         if not self._storage_is_attached():
             return False
-
         if not _get_pod_ip():
             return False
 
@@ -366,18 +351,12 @@ class NSSFOperatorCharm(CharmBase):
             return ""
         if not (pod_ip := _get_pod_ip()):
             return ""
-        if not (sst_config := self._get_sst_config()):
-            return ""
-        if not (sd_config := self._get_sd_config()):
-            return ""
         if not self._webui_requires.webui_url:
             return ""
         return self._render_config_file(
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
             nssf_ip=pod_ip,
-            sst=sst_config,
-            sd=sd_config,
             scheme="https",
             webui_uri=self._webui_requires.webui_url,
         )
@@ -457,27 +436,12 @@ class NSSFOperatorCharm(CharmBase):
             return version_file_content
         return ""
 
-    def _get_invalid_configs(self) -> list[str]:
-        """Return list of invalid configurations.
-
-        Returns:
-            list: List of strings matching config keys.
-        """
-        invalid_configs = []
-        if not self._get_sd_config():
-            invalid_configs.append("sd")
-        if not self._get_sst_config():
-            invalid_configs.append("sst")
-        return invalid_configs
-
     @staticmethod
     def _render_config_file(
         *,
         nssf_ip: str,
         sbi_port: int,
         nrf_url: str,
-        sst: int,
-        sd: str,
         scheme: str,
         webui_uri: str,
     ):
@@ -487,8 +451,6 @@ class NSSFOperatorCharm(CharmBase):
             nssf_ip (str): IP address of the NSSF.
             sbi_port (int): NSSF SBi port.
             nrf_url (str): URL of the NRF.
-            sst (int): Slice Selection Type
-            sd (str): Slice ID
             scheme (str): SBI interface scheme ("http" or "https")
             webui_uri (str) : URL of the Webui
         """
@@ -498,8 +460,6 @@ class NSSFOperatorCharm(CharmBase):
             sbi_port=sbi_port,
             nrf_url=nrf_url,
             nssf_ip=nssf_ip,
-            sst=sst,
-            sd=sd,
             scheme=scheme,
             webui_uri=webui_uri,
         )
@@ -580,12 +540,6 @@ class NSSFOperatorCharm(CharmBase):
             "POD_IP": _get_pod_ip(),
             "MANAGED_BY_CONFIG_POD": "true",
         }
-
-    def _get_sd_config(self) -> Optional[str]:
-        return cast(Optional[str], self.model.config.get("sd"))
-
-    def _get_sst_config(self) -> Optional[int]:
-        return cast(Optional[int], self.model.config.get("sst"))
 
     @property
     def _nrf_data_is_available(self) -> bool:
