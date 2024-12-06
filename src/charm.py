@@ -7,7 +7,7 @@
 import logging
 from ipaddress import IPv4Address
 from subprocess import check_output
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.prometheus_k8s.v0.prometheus_scrape import (
@@ -154,6 +154,13 @@ class NSSFOperatorCharm(CharmBase):
             logger.info("Waiting for container to start")
             return
 
+        if invalid_configs := self._get_invalid_configs():
+            event.add_status(
+                BlockedStatus(f"The following configurations are not valid: {invalid_configs}")
+            )
+            logger.info("The following configurations are not valid: %s", invalid_configs)
+            return
+
         self.unit.set_workload_version(self._get_workload_version())
 
         if missing_relations := self._missing_relations():
@@ -204,6 +211,8 @@ class NSSFOperatorCharm(CharmBase):
             ready_to_configure: True if all conditions are met else False
         """
         if not self._container.can_connect():
+            return False
+        if self._get_invalid_configs():
             return False
         if self._missing_relations():
             return False
@@ -353,12 +362,15 @@ class NSSFOperatorCharm(CharmBase):
             return ""
         if not self._webui_requires.webui_url:
             return ""
+        if not (log_level := self._get_log_level_config()):
+            raise ValueError("Log level configuration value is empty")
         return self._render_config_file(
             sbi_port=SBI_PORT,
             nrf_url=self._nrf_requires.nrf_url,
             nssf_ip=pod_ip,
             scheme="https",
             webui_uri=self._webui_requires.webui_url,
+            log_level=log_level,
         )
 
     def _on_certificates_relation_broken(self, event: RelationBrokenEvent) -> None:
@@ -436,6 +448,24 @@ class NSSFOperatorCharm(CharmBase):
             return version_file_content
         return ""
 
+    def _get_invalid_configs(self) -> list[str]:
+        """Return list of invalid configurations.
+
+        Returns:
+            list: List of strings matching config keys.
+        """
+        invalid_configs = []
+        if not self._is_log_level_valid():
+            invalid_configs.append("log-level")
+        return invalid_configs
+
+    def _get_log_level_config(self) -> Optional[str]:
+        return cast(Optional[str], self.model.config.get("log-level"))
+
+    def _is_log_level_valid(self) -> bool:
+        log_level = self._get_log_level_config()
+        return log_level in ["debug", "info", "warn", "error", "fatal", "panic"]
+
     @staticmethod
     def _render_config_file(
         *,
@@ -444,6 +474,7 @@ class NSSFOperatorCharm(CharmBase):
         nrf_url: str,
         scheme: str,
         webui_uri: str,
+        log_level: str,
     ):
         """Render the NSSF config file.
 
@@ -453,6 +484,7 @@ class NSSFOperatorCharm(CharmBase):
             nrf_url (str): URL of the NRF.
             scheme (str): SBI interface scheme ("http" or "https")
             webui_uri (str) : URL of the Webui
+            log_level (str): Log level for the NSSF.
         """
         jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR))
         template = jinja2_environment.get_template(CONFIG_TEMPLATE_NAME)
@@ -462,6 +494,7 @@ class NSSFOperatorCharm(CharmBase):
             nssf_ip=nssf_ip,
             scheme=scheme,
             webui_uri=webui_uri,
+            log_level=log_level,
         )
         return content
 
