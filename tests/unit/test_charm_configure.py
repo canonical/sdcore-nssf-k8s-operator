@@ -177,11 +177,6 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
                                 "override": "replace",
                                 "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
                                 "environment": {
-                                    "GOTRACEBACK": "crash",
-                                    "GRPC_GO_LOG_VERBOSITY_LEVEL": "99",
-                                    "GRPC_GO_LOG_SEVERITY_LEVEL": "info",
-                                    "GRPC_TRACE": "all",
-                                    "GRPC_VERBOSITY": "DEBUG",
                                     "POD_IP": "1.1.1.1",
                                     "MANAGED_BY_CONFIG_POD": "true",
                                 },
