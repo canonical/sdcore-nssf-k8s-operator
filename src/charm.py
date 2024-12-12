@@ -539,6 +539,7 @@ class NSSFOperatorCharm(CharmBase):
             "GRPC_VERBOSITY": "DEBUG",
             "POD_IP": _get_pod_ip(),
             "MANAGED_BY_CONFIG_POD": "true",
+            "GIN_MODE": "release",
         }
 
     @property
