@@ -30,11 +30,11 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
                 interface="sdcore_config",
             )
             config_mount = testing.Mount(
-                location="/free5gc/config/",
+                location="/sdcore/config/",
                 source=temp_dir,
             )
             certs_mount = testing.Mount(
-                location="/support/TLS",
+                location="/sdcore/certs",
                 source=temp_dir,
             )
             container = testing.Container(
@@ -82,11 +82,11 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
                 interface="sdcore_config",
             )
             config_mount = testing.Mount(
-                location="/free5gc/config/",
+                location="/sdcore/config/",
                 source=temp_dir,
             )
             certs_mount = testing.Mount(
-                location="/support/TLS",
+                location="/sdcore/certs",
                 source=temp_dir,
             )
             container = testing.Container(
@@ -140,11 +140,11 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
                 interface="sdcore_config",
             )
             config_mount = testing.Mount(
-                location="/free5gc/config/",
+                location="/sdcore/config/",
                 source=temp_dir,
             )
             certs_mount = testing.Mount(
-                location="/support/TLS",
+                location="/sdcore/certs",
                 source=temp_dir,
             )
             container = testing.Container(
@@ -175,7 +175,7 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
                             "nssf": {
                                 "startup": "enabled",
                                 "override": "replace",
-                                "command": "/bin/nssf --cfg /free5gc/config/nssfcfg.conf",
+                                "command": "/bin/nssf --cfg /sdcore/config/nssfcfg.conf",
                                 "environment": {
                                     "POD_IP": "1.1.1.1",
                                     "MANAGED_BY_CONFIG_POD": "true",
