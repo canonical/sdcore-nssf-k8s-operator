@@ -550,7 +550,7 @@ class NSSFOperatorCharm(CharmBase):
                     self._service_name: {
                         "override": "replace",
                         "startup": "enabled",
-                        "command": f"/bin/nssf --nssfcfg {CONFIG_DIR}/{CONFIG_FILE_NAME}",  # noqa: E501
+                        "command": f"/bin/nssf --cfg {CONFIG_DIR}/{CONFIG_FILE_NAME}",  # noqa: E501
                         "environment": self._nssf_environment_variables,
                     },
                 },

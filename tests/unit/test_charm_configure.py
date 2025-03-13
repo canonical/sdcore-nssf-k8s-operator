@@ -175,7 +175,7 @@ class TestCharmConfigure(NSSFUnitTestFixtures):
                             "nssf": {
                                 "startup": "enabled",
                                 "override": "replace",
-                                "command": "/bin/nssf --nssfcfg /free5gc/config/nssfcfg.conf",
+                                "command": "/bin/nssf --cfg /free5gc/config/nssfcfg.conf",
                                 "environment": {
                                     "POD_IP": "1.1.1.1",
                                     "MANAGED_BY_CONFIG_POD": "true",
