@@ -7,6 +7,9 @@ configuration:
     port: {{ sbi_port }}
     registerIPv4: {{ nssf_ip }}
     scheme: {{ scheme }}
+    tls:
+      pem: {{ tls_pem }}
+      key: {{ tls_key }}
   serviceNameList:
   - nnssf-nsselection
   - nnssf-nssaiavailability

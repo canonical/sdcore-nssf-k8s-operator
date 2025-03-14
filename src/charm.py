@@ -41,11 +41,11 @@ logger = logging.getLogger(__name__)
 
 PROMETHEUS_PORT = 8080
 SBI_PORT = 29531
-CONFIG_DIR = "/free5gc/config"
+CONFIG_DIR = "/sdcore/config"
 CONFIG_FILE_NAME = "nssfcfg.conf"
 CONFIG_TEMPLATE_DIR = "src/templates/"
 CONFIG_TEMPLATE_NAME = "nssfcfg.conf.j2"
-CERTS_DIR_PATH = "/support/TLS"  # Certificate paths are hardcoded in NSSF code
+CERTS_DIR_PATH = "/sdcore/certs"
 PRIVATE_KEY_NAME = "nssf.key"
 CERTIFICATE_NAME = "nssf.pem"
 CERTIFICATE_COMMON_NAME = "nssf.sdcore"
@@ -370,6 +370,8 @@ class NSSFOperatorCharm(CharmBase):
             nssf_ip=pod_ip,
             scheme="https",
             webui_uri=self._webui_requires.webui_url,
+            tls_pem=f"{CERTS_DIR_PATH}/{CERTIFICATE_NAME}",
+            tls_key=f"{CERTS_DIR_PATH}/{PRIVATE_KEY_NAME}",
             log_level=log_level,
         )
 
@@ -474,6 +476,8 @@ class NSSFOperatorCharm(CharmBase):
         nrf_url: str,
         scheme: str,
         webui_uri: str,
+        tls_pem: str,
+        tls_key: str,
         log_level: str,
     ):
         """Render the NSSF config file.
@@ -484,6 +488,8 @@ class NSSFOperatorCharm(CharmBase):
             nrf_url (str): URL of the NRF.
             scheme (str): SBI interface scheme ("http" or "https")
             webui_uri (str) : URL of the Webui
+            tls_pem (str): Path to the TLS certificate.
+            tls_key (str): Path to the TLS private key.
             log_level (str): Log level for the NSSF.
         """
         jinja2_environment = Environment(loader=FileSystemLoader(CONFIG_TEMPLATE_DIR))
@@ -494,6 +500,8 @@ class NSSFOperatorCharm(CharmBase):
             nssf_ip=nssf_ip,
             scheme=scheme,
             webui_uri=webui_uri,
+            tls_pem=tls_pem,
+            tls_key=tls_key,
             log_level=log_level,
         )
         return content
@@ -550,7 +558,7 @@ class NSSFOperatorCharm(CharmBase):
                     self._service_name: {
                         "override": "replace",
                         "startup": "enabled",
-                        "command": f"/bin/nssf --nssfcfg {CONFIG_DIR}/{CONFIG_FILE_NAME}",  # noqa: E501
+                        "command": f"/bin/nssf --cfg {CONFIG_DIR}/{CONFIG_FILE_NAME}",  # noqa: E501
                         "environment": self._nssf_environment_variables,
                     },
                 },
